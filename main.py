@@ -33,13 +33,17 @@ import os
 logger.info("--- DEBUGGING ENVIRONMENT VARIABLES ---")
 logger.info("Current working directory: %s", os.getcwd())
 logger.info("Files in current directory: %s", os.listdir("."))
-logger.info("Environment keys present: %s", list(os.environ.keys()))
-token_in_env = os.environ.get("TELEGRAM_BOT_TOKEN")
-if token_in_env:
-    logger.info("TELEGRAM_BOT_TOKEN length: %d", len(token_in_env))
-    logger.info("TELEGRAM_BOT_TOKEN start: %s...", token_in_env[:5])
-else:
-    logger.info("TELEGRAM_BOT_TOKEN is NOT present in os.environ")
+
+for key in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_IDS", "CLASS_IDS", "TIMEZONE", "GOOGLE_CALENDAR_ENABLED"]:
+    val = os.environ.get(key)
+    if val is None:
+        logger.info("ENV: %s is MISSING", key)
+    elif val == "":
+        logger.info("ENV: %s is EMPTY STRING", key)
+    else:
+        # Mask if it's the token
+        display_val = val if key != "TELEGRAM_BOT_TOKEN" else f"{val[:6]}...{val[-4:]}" if len(val) > 10 else "***"
+        logger.info("ENV: %s = %r", key, display_val)
 # ──────────────────────────────────────────────────────────────────────────────
 
 VN_TZ = timezone(timedelta(hours=7))
