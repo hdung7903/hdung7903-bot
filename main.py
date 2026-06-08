@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Bot
 from telegram import Update
 from telegram.ext import Application, ContextTypes
@@ -29,6 +30,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 VN_TZ = timezone(timedelta(hours=7))
 
@@ -168,9 +171,7 @@ async def on_startup(application: Application) -> None:
         if WC_LIVE_CHECK_MINUTES > 0:
             scheduler.add_job(
                 job_wc_result_check,
-                trigger=CronTrigger(
-                    minute=f"*/{WC_LIVE_CHECK_MINUTES}", timezone=TIMEZONE
-                ),
+                trigger=IntervalTrigger(minutes=WC_LIVE_CHECK_MINUTES, timezone=TIMEZONE),
                 args=[bot], id="wc_results", replace_existing=True,
             )
         logger.info("✅ WC 2026 module enabled (daily=%dh, check every %dmin)",
