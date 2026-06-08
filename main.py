@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from telegram import Bot
+from telegram import Bot, BotCommand
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
@@ -127,6 +127,28 @@ async def job_wc_result_check(bot: Bot) -> None:
 
 # ── Startup / Shutdown ────────────────────────────────────────────────────────
 
+def _build_bot_commands() -> list[BotCommand]:
+    commands = [
+        BotCommand("start", "Khởi động bot"),
+        BotCommand("help", "Xem danh sách lệnh"),
+        BotCommand("lich", "Xem lịch học 7 ngày tới"),
+        BotCommand("lich_thang", "Xem lịch học tháng này"),
+        BotCommand("hom_nay", "Xem lịch học hôm nay"),
+        BotCommand("ngay_mai", "Xem lịch học ngày mai"),
+        BotCommand("sync", "Đồng bộ lịch học ngay"),
+        BotCommand("status", "Xem trạng thái bot"),
+        BotCommand("dang_ky", "Đăng ký nhận thông báo"),
+        BotCommand("huy", "Hủy nhận thông báo"),
+    ]
+    if WC_ENABLED:
+        commands.extend([
+            BotCommand("wc", "World Cup 2026"),
+            BotCommand("wchelp", "Trợ giúp World Cup"),
+            BotCommand("wc_help", "Trợ giúp World Cup"),
+        ])
+    return commands
+
+
 async def _run_initial_sync(bot: Bot) -> None:
     try:
         from sync_service import run_sync
@@ -145,6 +167,8 @@ async def on_startup(application: Application) -> None:
     scheduler: AsyncIOScheduler = application.bot_data["scheduler"]
     me = await bot.get_me()
     logger.info("🤖 Telegram bot identity: @%s (id=%s)", me.username, me.id)
+    await bot.set_my_commands(_build_bot_commands())
+    logger.info("✅ Telegram slash commands synced.")
 
     # ── Lịch học: đồng bộ 0h,7h,12h,17h ─────────────────────────────────────
     hours_str = ",".join(str(h) for h in SYNC_HOURS)
