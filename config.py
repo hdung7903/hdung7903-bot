@@ -78,10 +78,14 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # ── World Cup 2026 ───────────────────────────────────────────────────────────
 WC_ENABLED          = os.getenv("WC_ENABLED", "true").lower() == "true"
-# Lấy API key miễn phí tại https://www.football-data.org/client/register
-FOOTBALL_API_KEY    = os.getenv("FOOTBALL_API_KEY", "")
-FOOTBALL_API_URL    = "https://api.football-data.org/v4"
-WC_COMPETITION_CODE = "WC"          # World Cup code trên football-data.org
+WC_API_BASE_URL     = os.getenv(
+    "WC_API_BASE_URL",
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world",
+)
+WC_STANDINGS_URL    = os.getenv(
+    "WC_STANDINGS_URL",
+    "https://site.web.api.espn.com/apis/v2/sports/soccer/fifa.world/standings",
+)
 WC_START_DATE       = date(2026, 6, 11)
 WC_END_DATE         = date(2026, 7, 19)
 # Gửi thông báo lịch WC hàng ngày lúc mấy giờ (giờ VN)

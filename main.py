@@ -53,16 +53,15 @@ async def job_send_reminders(bot: Bot) -> None:
 
 async def job_wc_daily_notify(bot: Bot) -> None:
     """Gửi lịch trận WC hôm nay lúc 0h."""
-    from datetime import date
-    today = date.today()
-    if not (WC_START_DATE <= today <= WC_END_DATE):
+    vn_today = datetime.now(VN_TZ).date()
+    if not (WC_START_DATE <= vn_today <= WC_END_DATE):
         return
 
     logger.info("⏰ [WC] Gửi lịch trận hôm nay...")
     from wc_client import fetch_today_matches
     from wc_notifier import build_daily_wc_message
 
-    vn_date = datetime.now(VN_TZ).strftime("%Y-%m-%d")
+    vn_date = vn_today.strftime("%Y-%m-%d")
     matches = await fetch_today_matches()
     for m in matches:
         wc_db.upsert_match(m)
@@ -85,15 +84,13 @@ async def job_wc_daily_notify(bot: Bot) -> None:
 
 async def job_wc_result_check(bot: Bot) -> None:
     """Kiểm tra & thông báo kết quả trận vừa kết thúc (chạy mỗi N phút)."""
-    from datetime import date
-    today = date.today()
-    if not (WC_START_DATE <= today <= WC_END_DATE):
+    vn_today = datetime.now(VN_TZ).date()
+    if not (WC_START_DATE <= vn_today <= WC_END_DATE):
         return
 
     from wc_client import fetch_today_matches
     from wc_notifier import build_result_message
 
-    vn_date = datetime.now(VN_TZ).strftime("%Y-%m-%d")
     matches = await fetch_today_matches()
 
     new_results = []

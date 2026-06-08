@@ -23,7 +23,6 @@ services:
 
       # ── World Cup 2026 (tuỳ chọn) ────────────────
       - WC_ENABLED=${WC_ENABLED:-true}
-      - FOOTBALL_API_KEY=${FOOTBALL_API_KEY:-}
       - WC_DAILY_NOTIFY_HOUR=${WC_DAILY_NOTIFY_HOUR:-0}
       - WC_LIVE_CHECK_MINUTES=${WC_LIVE_CHECK_MINUTES:-60}
 

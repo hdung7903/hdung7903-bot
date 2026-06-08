@@ -1,16 +1,12 @@
 """
-wc_client.py – Fetch dữ liệu World Cup 2026 từ football-data.org API.
-
-Đăng ký API key miễn phí tại: https://www.football-data.org/client/register
-Free tier: 10 req/min, đủ dùng cho bot.
+wc_client.py – Fetch dữ liệu World Cup 2026 từ ESPN public endpoints.
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional
 
 import httpx
 
-from config import FOOTBALL_API_KEY, FOOTBALL_API_URL, WC_COMPETITION_CODE, TIMEZONE
+from config import WC_API_BASE_URL, WC_STANDINGS_URL, WC_START_DATE, WC_END_DATE
 
 logger = logging.getLogger(__name__)
 
@@ -128,10 +124,34 @@ def find_team_api_names(search: str) -> list[str]:
     return candidates
 
 
-# ── API helpers ───────────────────────────────────────────────────────────────
+# ── ESPN API helpers ──────────────────────────────────────────────────────────
 
-def _headers() -> dict:
-    return {"X-Auth-Token": FOOTBALL_API_KEY} if FOOTBALL_API_KEY else {}
+STATUS_MAP = {
+    "STATUS_SCHEDULED": "SCHEDULED",
+    "STATUS_FIRST_HALF": "IN_PLAY",
+    "STATUS_HALFTIME": "PAUSED",
+    "STATUS_SECOND_HALF": "IN_PLAY",
+    "STATUS_EXTRA_TIME": "IN_PLAY",
+    "STATUS_PENALTY_SHOOTOUT": "IN_PLAY",
+    "STATUS_FINAL": "FINISHED",
+    "STATUS_FULL_TIME": "FINISHED",
+    "STATUS_POSTPONED": "POSTPONED",
+    "STATUS_CANCELED": "CANCELLED",
+    "STATUS_CANCELLED": "CANCELLED",
+    "STATUS_SUSPENDED": "SUSPENDED",
+}
+
+STAGE_MAP = {
+    "group-stage": "GROUP_STAGE",
+    "round-of-32": "LAST_32",
+    "round-of-16": "LAST_16",
+    "quarterfinal": "QUARTER_FINALS",
+    "quarter-final": "QUARTER_FINALS",
+    "semifinal": "SEMI_FINALS",
+    "semi-final": "SEMI_FINALS",
+    "third-place": "THIRD_PLACE",
+    "final": "FINAL",
+}
 
 
 def _utc_to_vn(utc_str: str) -> datetime:
@@ -140,98 +160,167 @@ def _utc_to_vn(utc_str: str) -> datetime:
     return dt.astimezone(VN_TZ)
 
 
+def _date_param(date_str: str) -> str:
+    return date_str.replace("-", "")
+
+
+def _vn_date_window(date_str: str) -> tuple[str, str]:
+    """Return ESPN date range wide enough to cover a full Vietnam day."""
+    target = datetime.strptime(date_str, "%Y-%m-%d").date()
+    start = target - timedelta(days=1)
+    end = target + timedelta(days=1)
+    return _date_param(start.isoformat()), _date_param(end.isoformat())
+
+
+def _score(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _team_name(team: dict) -> str:
+    return team.get("displayName") or team.get("shortDisplayName") or team.get("name") or ""
+
+
+def _pick_competitor(competitors: list[dict], side: str) -> dict:
+    for competitor in competitors:
+        if competitor.get("homeAway") == side:
+            return competitor
+    return {}
+
+
+def _group_label(event: dict) -> str:
+    groups = event.get("groups") or {}
+    if isinstance(groups, dict):
+        name = groups.get("name") or groups.get("abbreviation")
+        if name:
+            return str(name)
+    return ""
+
+
+def _stage(event: dict) -> str:
+    slug = (event.get("season") or {}).get("slug") or ""
+    return STAGE_MAP.get(slug, slug.upper().replace("-", "_"))
+
+
+def _winner(home: dict, away: dict, status: str) -> str | None:
+    if status != "FINISHED":
+        return None
+    if home.get("winner"):
+        return "HOME_TEAM"
+    if away.get("winner"):
+        return "AWAY_TEAM"
+    return "DRAW"
+
+
 def _normalize_match(raw: dict) -> dict:
-    """Chuẩn hoá 1 match object từ API."""
-    utc_str = raw.get("utcDate", "")
+    """Chuẩn hoá 1 match object từ ESPN về schema nội bộ."""
+    competitions = raw.get("competitions") or []
+    comp = competitions[0] if competitions else {}
+    utc_str = comp.get("date") or comp.get("startDate") or raw.get("date") or ""
     vn_dt   = _utc_to_vn(utc_str) if utc_str else None
 
-    home = raw.get("homeTeam", {})
-    away = raw.get("awayTeam", {})
-    score = raw.get("score", {})
-    ft   = score.get("fullTime", {})
-    ht   = score.get("halfTime", {})
+    competitors = comp.get("competitors") or []
+    home = _pick_competitor(competitors, "home")
+    away = _pick_competitor(competitors, "away")
+    home_team = home.get("team") or {}
+    away_team = away.get("team") or {}
 
-    # Goals / scorers
+    status_type = (comp.get("status") or {}).get("type") or {}
+    status_name = status_type.get("name") or ""
+    status = STATUS_MAP.get(status_name, "LIVE" if status_type.get("state") == "in" else "SCHEDULED")
+
     goals = []
-    for g in raw.get("goals", []):
+    for g in comp.get("details") or []:
+        if "goal" not in (g.get("type", {}).get("text", "") or "").lower():
+            continue
+        athletes = g.get("athletes") or []
+        team = g.get("team") or {}
         goals.append({
-            "minute":  g.get("minute"),
-            "team":    g.get("team", {}).get("name", ""),
-            "scorer":  g.get("scorer", {}).get("name", ""),
-            "type":    g.get("type", "NORMAL"),  # NORMAL, OWN_GOAL, PENALTY
+            "minute": g.get("clock", {}).get("displayValue") or g.get("displayTime") or "?",
+            "team": _team_name(team),
+            "scorer": (athletes[0] if athletes else {}).get("displayName", ""),
+            "type": "OWN_GOAL" if g.get("ownGoal") else ("PENALTY" if g.get("penaltyKick") else "NORMAL"),
         })
 
+    home_score = _score(home.get("score"))
+    away_score = _score(away.get("score"))
+
     return {
-        "id":           raw.get("id"),
+        "id":           int(raw.get("id") or comp.get("id") or 0),
         "utc_date":     utc_str,
         "vn_date":      vn_dt.strftime("%Y-%m-%d") if vn_dt else None,
         "vn_time":      vn_dt.strftime("%H:%M") if vn_dt else None,
         "vn_datetime":  vn_dt,
-        "status":       raw.get("status", "SCHEDULED"),
-        "stage":        raw.get("stage", ""),
-        "group":        raw.get("group") or "",
-        "matchday":     raw.get("matchday"),
-        "home_team":    home.get("name", ""),
-        "home_team_tla": home.get("tla", ""),
-        "away_team":    away.get("name", ""),
-        "away_team_tla": away.get("tla", ""),
-        "home_score":   ft.get("home"),
-        "away_score":   ft.get("away"),
-        "ht_home":      ht.get("home"),
-        "ht_away":      ht.get("away"),
-        "winner":       score.get("winner"),  # HOME_TEAM, AWAY_TEAM, DRAW, null
+        "status":       status,
+        "stage":        _stage(raw),
+        "group":        _group_label(raw),
+        "matchday":     raw.get("season", {}).get("type"),
+        "home_team":    _team_name(home_team),
+        "home_team_tla": home_team.get("abbreviation", ""),
+        "away_team":    _team_name(away_team),
+        "away_team_tla": away_team.get("abbreviation", ""),
+        "home_score":   home_score,
+        "away_score":   away_score,
+        "ht_home":      None,
+        "ht_away":      None,
+        "winner":       _winner(home, away, status),
         "goals":        goals,
     }
 
 
-async def _get(endpoint: str, params: dict = None) -> dict | list | None:
-    url = f"{FOOTBALL_API_URL}{endpoint}"
+async def _get(url: str, params: dict = None) -> dict | list | None:
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url, headers=_headers(), params=params or {})
+            resp = await client.get(url, params=params or {})
             if resp.status_code == 429:
-                logger.warning("Football API rate limit hit.")
+                logger.warning("ESPN API rate limit hit.")
                 return None
             resp.raise_for_status()
             return resp.json()
     except Exception as e:
-        logger.error("Football API error [%s]: %s", endpoint, e)
+        logger.error("ESPN API error [%s]: %s", url, e)
         return None
 
 
 # ── Public fetch functions ────────────────────────────────────────────────────
 
 async def fetch_matches_by_date(date_str: str) -> list[dict]:
-    """Lấy tất cả trận WC trong ngày (YYYY-MM-DD)."""
+    """Lấy tất cả trận WC trong ngày Việt Nam (YYYY-MM-DD)."""
+    start, end = _vn_date_window(date_str)
     data = await _get(
-        f"/competitions/{WC_COMPETITION_CODE}/matches",
-        params={"dateFrom": date_str, "dateTo": date_str},
+        f"{WC_API_BASE_URL}/scoreboard",
+        params={"dates": f"{start}-{end}", "limit": 50},
     )
     if not data:
         return []
-    matches = data.get("matches", [])
-    return [_normalize_match(m) for m in matches]
+    matches = [_normalize_match(m) for m in data.get("events", [])]
+    return sorted(
+        [m for m in matches if m.get("vn_date") == date_str],
+        key=lambda m: m.get("vn_time") or "",
+    )
 
 
 async def fetch_today_matches() -> list[dict]:
-    from datetime import date
     today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
     return await fetch_matches_by_date(today)
 
 
 async def fetch_all_wc_matches() -> list[dict]:
     """Lấy toàn bộ lịch WC 2026."""
-    from config import WC_START_DATE, WC_END_DATE
     data = await _get(
-        f"/competitions/{WC_COMPETITION_CODE}/matches",
+        f"{WC_API_BASE_URL}/scoreboard",
         params={
-            "dateFrom": WC_START_DATE.isoformat(),
-            "dateTo":   WC_END_DATE.isoformat(),
+            "dates": f"{_date_param(WC_START_DATE.isoformat())}-{_date_param(WC_END_DATE.isoformat())}",
+            "limit": 200,
         },
     )
     if not data:
         return []
-    return [_normalize_match(m) for m in data.get("matches", [])]
+    return [_normalize_match(m) for m in data.get("events", [])]
 
 
 async def fetch_team_matches(team_search: str) -> tuple[list[dict], str]:
@@ -274,13 +363,8 @@ async def fetch_team_matches(team_search: str) -> tuple[list[dict], str]:
 
 async def fetch_live_matches() -> list[dict]:
     """Lấy các trận đang diễn ra."""
-    data = await _get(
-        f"/competitions/{WC_COMPETITION_CODE}/matches",
-        params={"status": "LIVE,IN_PLAY,PAUSED"},
-    )
-    if not data:
-        return []
-    return [_normalize_match(m) for m in data.get("matches", [])]
+    matches = await fetch_today_matches()
+    return [m for m in matches if m["status"] in {"LIVE", "IN_PLAY", "PAUSED"}]
 
 
 async def fetch_finished_today() -> list[dict]:
@@ -292,7 +376,31 @@ async def fetch_finished_today() -> list[dict]:
 
 async def fetch_standings() -> list[dict]:
     """Lấy bảng xếp hạng các bảng (group stage)."""
-    data = await _get(f"/competitions/{WC_COMPETITION_CODE}/standings")
+    data = await _get(
+        WC_STANDINGS_URL,
+        params={"region": "us", "lang": "en", "contentorigin": "espn"},
+    )
     if not data:
         return []
-    return data.get("standings", [])
+
+    standings = []
+    for group in data.get("children", []):
+        table = []
+        entries = (group.get("standings") or {}).get("entries") or []
+        for index, entry in enumerate(entries, start=1):
+            stats = {
+                stat.get("name"): stat.get("value", 0)
+                for stat in entry.get("stats", [])
+            }
+            table.append({
+                "position": index,
+                "team": {"name": _team_name(entry.get("team") or {})},
+                "points": int(stats.get("points", 0) or 0),
+                "goalDifference": int(stats.get("pointDifferential", 0) or 0),
+                "goalsFor": int(stats.get("pointsFor", 0) or 0),
+            })
+        standings.append({
+            "group": group.get("name") or group.get("abbreviation") or "",
+            "table": table,
+        })
+    return standings

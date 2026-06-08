@@ -59,8 +59,24 @@ docker compose logs -f
 | `/status` | Trạng thái bot & thống kê |
 | `/dang_ky` | Đăng ký nhận thông báo |
 | `/huy` | Hủy nhận thông báo |
+| `/wc` | Lịch World Cup 2026 hôm nay |
+| `/wc live` | Trận World Cup đang diễn ra |
+| `/wc bang` | Bảng xếp hạng World Cup |
+| `/wchelp` | Trợ giúp module World Cup |
 
 ---
+
+## ⚽ World Cup 2026
+
+Module World Cup dùng ESPN public endpoints nên không cần token riêng. Các lệnh `/wc`, `/wc live`, `/wc ket_qua`, `/wc DD-MM`, `/wc <đội>` và `/wc bang` hoạt động qua cùng bot cá nhân.
+
+Tất cả lịch và lệnh theo ngày đều dùng ngày giờ Việt Nam. Ví dụ trận khai mạc diễn ra 19:00 UTC ngày 11/06/2026 sẽ hiển thị là 02:00 ngày 12/06/2026 theo giờ Việt Nam, và nằm trong `/wc 12-06`.
+
+```env
+WC_ENABLED=true
+WC_DAILY_NOTIFY_HOUR=0
+WC_LIVE_CHECK_MINUTES=60
+```
 
 ## ⏰ Giờ học mặc định
 
@@ -185,6 +201,9 @@ telegram/
 | `SYNC_HOURS` | `0,7,12,17` | Giờ đồng bộ hàng ngày |
 | `NOTIFY_BEFORE_HOURS` | `24` | Nhắc trước N giờ |
 | `TIMEZONE` | `Asia/Ho_Chi_Minh` | Múi giờ |
+| `WC_ENABLED` | `true` | Bật module World Cup 2026 |
+| `WC_DAILY_NOTIFY_HOUR` | `0` | Giờ gửi lịch trận hằng ngày |
+| `WC_LIVE_CHECK_MINUTES` | `60` | Chu kỳ kiểm tra kết quả live; `0` để tắt |
 | `GOOGLE_CALENDAR_ENABLED` | `false` | Bật Google Calendar |
 | `GOOGLE_CALENDAR_ID` | `primary` | ID calendar đích |
 | `LOG_LEVEL` | `INFO` | Mức log |
