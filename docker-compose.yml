@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    container_name: vinhuni-schedule-bot
+    restart: unless-stopped
+    environment:
+      # ── Bắt buộc ──────────────────────────────────
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      # Chat ID của bạn (lấy từ @userinfobot)
+      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS}
+
+      # ── Lớp học ───────────────────────────────────
+      - CLASS_IDS=${CLASS_IDS:-TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01}
+
+      # ── Cấu hình ──────────────────────────────────
+      - TIMEZONE=Asia/Ho_Chi_Minh
+      - SYNC_HOURS=0,7,12,17
+      - NOTIFY_BEFORE_HOURS=24
+      - DATABASE_PATH=/app/data/schedule.db
+      - LOG_LEVEL=INFO
+
+      # ── Google Calendar (tuỳ chọn) ────────────────
+      - GOOGLE_CALENDAR_ENABLED=${GOOGLE_CALENDAR_ENABLED:-false}
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
+      - GOOGLE_CREDENTIALS_FILE=/app/credentials/credentials.json
+      - GOOGLE_TOKEN_FILE=/app/data/token.json
+
+    volumes:
+      # Database SQLite (persistent)
+      - bot_data:/app/data
+      # Google credentials (nếu dùng Google Calendar)
+      - ./credentials:/app/credentials:ro
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/schedule.db')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  bot_data:
+    driver: local

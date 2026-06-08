@@ -1,0 +1,68 @@
+import os
+from datetime import date
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ── Telegram ─────────────────────────────────────────────────────────────────
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_IDS  = [
+    cid.strip()
+    for cid in os.getenv("TELEGRAM_CHAT_IDS", "").split(",")
+    if cid.strip()
+]  # Danh sách chat_id được phép nhận thông báo (admin)
+
+# ── API trường ────────────────────────────────────────────────────────────────
+SCHEDULE_API_URL = "https://bd.vinhuni.edu.vn/api/lay-lich-hoc"
+CLASS_IDS = [
+    cid.strip()
+    for cid in os.getenv(
+        "CLASS_IDS",
+        "TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01",
+    ).split(",")
+    if cid.strip()
+]
+
+# ── Lịch học mặc định ────────────────────────────────────────────────────────
+# Nếu API không trả về giờ cụ thể, dùng giờ mặc định này
+DEFAULT_SESSION_TIMES = {
+    "sang":   {"start": "08:00", "duration_hours": 2},   # Sáng  8:00 – 10:00
+    "chieu":  {"start": "14:00", "duration_hours": 2},   # Chiều 14:00 – 16:00
+    "toi":    {"start": "19:00", "duration_hours": 2},   # Tối   19:00 – 21:00
+}
+
+# ── Google Calendar ───────────────────────────────────────────────────────────
+GOOGLE_CALENDAR_ENABLED    = os.getenv("GOOGLE_CALENDAR_ENABLED", "false").lower() == "true"
+GOOGLE_CREDENTIALS_FILE    = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
+GOOGLE_TOKEN_FILE          = os.getenv("GOOGLE_TOKEN_FILE", "token.json")
+GOOGLE_CALENDAR_ID         = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+GOOGLE_CALENDAR_SCOPES     = ["https://www.googleapis.com/auth/calendar"]
+
+# ── Cron schedule ─────────────────────────────────────────────────────────────
+# Giờ chạy đồng bộ lịch (UTC+7 → server dùng giờ địa phương nếu TZ=Asia/Ho_Chi_Minh)
+SYNC_HOURS = [int(h) for h in os.getenv("SYNC_HOURS", "0,7,12,17").split(",")]
+
+# Nhắc nhở trước bao nhiêu giờ (mặc định 24h = 1 ngày)
+NOTIFY_BEFORE_HOURS = int(os.getenv("NOTIFY_BEFORE_HOURS", "24"))
+
+# ── Database ──────────────────────────────────────────────────────────────────
+DATABASE_PATH = os.getenv("DATABASE_PATH", "data/schedule.db")
+
+# ── Timezone ──────────────────────────────────────────────────────────────────
+TIMEZONE = os.getenv("TIMEZONE", "Asia/Ho_Chi_Minh")
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# ── World Cup 2026 ───────────────────────────────────────────────────────────
+WC_ENABLED          = os.getenv("WC_ENABLED", "true").lower() == "true"
+# Lấy API key miễn phí tại https://www.football-data.org/client/register
+FOOTBALL_API_KEY    = os.getenv("FOOTBALL_API_KEY", "")
+FOOTBALL_API_URL    = "https://api.football-data.org/v4"
+WC_COMPETITION_CODE = "WC"          # World Cup code trên football-data.org
+WC_START_DATE       = date(2026, 6, 11)
+WC_END_DATE         = date(2026, 7, 19)
+# Gửi thông báo lịch WC hàng ngày lúc mấy giờ (giờ VN)
+WC_DAILY_NOTIFY_HOUR = int(os.getenv("WC_DAILY_NOTIFY_HOUR", "0"))
+# Kiểm tra kết quả live bao nhiêu phút 1 lần trong ngày có trận (0 = tắt)
+WC_LIVE_CHECK_MINUTES = int(os.getenv("WC_LIVE_CHECK_MINUTES", "60"))

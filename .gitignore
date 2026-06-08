@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+.venv/
+venv/
+env/
+
+# Environment
+.env
+*.env
+
+# Database
+data/
+*.db
+*.sqlite3
+
+# Google credentials (KHÔNG commit file này!)
+credentials/
+token.json
+credentials.json
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

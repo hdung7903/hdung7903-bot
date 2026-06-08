@@ -1,0 +1,171 @@
+# 🤖 VinhUni Schedule Telegram Bot
+
+Bot Telegram tự động **đồng bộ lịch học** từ hệ thống VinhUni, gửi **nhắc nhở 24h trước** mỗi buổi học, và đẩy lên **Google Calendar**. Hỗ trợ deploy trên **Coolify** qua Docker.
+
+---
+
+## ✨ Tính năng
+
+| Tính năng | Mô tả |
+|---|---|
+| 🔄 **Tự động đồng bộ** | Fetch lịch học lúc **0h, 7h, 12h, 17h** hàng ngày |
+| 🆕 **Phát hiện thay đổi** | So sánh từng buổi học, thông báo ngay khi lịch mới/thay đổi |
+| ⏰ **Nhắc nhở tự động** | Gửi nhắc nhở **24h trước** mỗi buổi học |
+| 🔗 **Link Teams** | Hiển thị link Teams trong thông báo |
+| 📅 **Google Calendar** | Đồng bộ lên Google Calendar (tuỳ chọn) |
+| 🐳 **Docker ready** | Deploy dễ dàng trên Coolify/VPS |
+
+---
+
+## 🚀 Cài đặt nhanh
+
+### 1. Clone & cấu hình
+
+```bash
+git clone <repo-url>
+cd telegram-schedule-bot
+cp .env.example .env
+```
+
+Chỉnh sửa `.env`:
+```env
+TELEGRAM_BOT_TOKEN=your_token_here
+TELEGRAM_CHAT_IDS=your_chat_id_here
+CLASS_IDS=TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01
+```
+
+> **Lấy Chat ID:** Nhắn tin `/start` cho [@userinfobot](https://t.me/userinfobot)
+
+### 2. Chạy với Docker Compose
+
+```bash
+docker compose up -d
+docker compose logs -f
+```
+
+---
+
+## 📱 Lệnh Telegram
+
+| Lệnh | Mô tả |
+|---|---|
+| `/start` | Khởi động & xem hướng dẫn |
+| `/lich` | Lịch học 7 ngày tới |
+| `/lich_thang` | Lịch học tháng này |
+| `/hom_nay` | Lịch học hôm nay |
+| `/ngay_mai` | Lịch học ngày mai |
+| `/sync` | Đồng bộ lịch ngay lập tức |
+| `/status` | Trạng thái bot & thống kê |
+| `/dang_ky` | Đăng ký nhận thông báo |
+| `/huy` | Hủy nhận thông báo |
+
+---
+
+## ⏰ Giờ học mặc định
+
+| Buổi | Giờ bắt đầu | Kết thúc |
+|---|---|---|
+| ☀️ Sáng | 08:00 | 10:00 |
+| 🌤 Chiều | 14:00 | 16:00 |
+| 🌙 Tối | 19:00 | 21:00 |
+
+*(Thời gian mặc định nếu API không trả về giờ cụ thể)*
+
+---
+
+## 📅 Google Calendar (tuỳ chọn)
+
+### Bước 1: Tạo credentials
+
+1. Vào [Google Cloud Console](https://console.cloud.google.com/)
+2. Tạo project mới → Enable **Google Calendar API**
+3. Tạo **OAuth 2.0 Client ID** (Desktop App)
+4. Tải file `credentials.json`
+
+### Bước 2: Đặt credentials
+
+```bash
+mkdir credentials
+cp credentials.json credentials/
+```
+
+### Bước 3: Lần đầu xác thực (chạy local)
+
+```bash
+pip install -r requirements.txt
+GOOGLE_CALENDAR_ENABLED=true python -c "from calendar_sync import _get_calendar_service; _get_calendar_service()"
+```
+
+Trình duyệt sẽ mở → đăng nhập Google → file `data/token.json` được tạo.
+
+### Bước 4: Bật trong `.env`
+
+```env
+GOOGLE_CALENDAR_ENABLED=true
+```
+
+---
+
+## 🐳 Deploy lên Coolify
+
+### Phương án 1: GitHub repo (khuyến nghị)
+
+1. Push code lên GitHub (đảm bảo `.gitignore` loại bỏ `.env`, `credentials/`, `data/`)
+2. Vào Coolify → **New Resource** → **Application**
+3. Chọn GitHub repo → Build Pack: **Dockerfile**
+4. Tab **Environment Variables** → thêm tất cả biến từ `.env.example`
+5. Tab **Storages** → thêm persistent volume: `/app/data`
+6. **Deploy**
+
+### Phương án 2: Docker image trực tiếp
+
+```bash
+# Build
+docker build -t vinhuni-bot .
+
+# Run
+docker run -d \
+  --name vinhuni-bot \
+  --restart unless-stopped \
+  -e TELEGRAM_BOT_TOKEN=xxx \
+  -e TELEGRAM_CHAT_IDS=xxx \
+  -e CLASS_IDS=TA01.NVSPTH.QY01 \
+  -v $(pwd)/data:/app/data \
+  vinhuni-bot
+```
+
+---
+
+## 📁 Cấu trúc project
+
+```
+telegram/
+├── main.py            # Entry point, scheduler
+├── handlers.py        # Telegram command handlers
+├── api_client.py      # Fetch & parse lịch học từ API
+├── sync_service.py    # Orchestrate sync + notify
+├── database.py        # SQLite storage
+├── notifier.py        # Format tin nhắn Telegram
+├── calendar_sync.py   # Google Calendar integration
+├── config.py          # Cấu hình từ env vars
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+└── .env.example
+```
+
+---
+
+## 🔧 Biến môi trường
+
+| Biến | Mặc định | Mô tả |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | *bắt buộc* | Token từ @BotFather |
+| `TELEGRAM_CHAT_IDS` | *bắt buộc* | Chat ID nhận thông báo |
+| `CLASS_IDS` | `TA01.NVSPTH.QY01,...` | Danh sách lớp học |
+| `SYNC_HOURS` | `0,7,12,17` | Giờ đồng bộ hàng ngày |
+| `NOTIFY_BEFORE_HOURS` | `24` | Nhắc trước N giờ |
+| `TIMEZONE` | `Asia/Ho_Chi_Minh` | Múi giờ |
+| `GOOGLE_CALENDAR_ENABLED` | `false` | Bật Google Calendar |
+| `GOOGLE_CALENDAR_ID` | `primary` | ID calendar đích |
+| `LOG_LEVEL` | `INFO` | Mức log |

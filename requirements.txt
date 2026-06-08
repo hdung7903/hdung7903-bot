@@ -1,0 +1,12 @@
+python-telegram-bot==21.6
+apscheduler==3.10.4
+httpx==0.27.2
+python-dotenv==1.0.1
+
+# Google Calendar (tuỳ chọn - bật khi cần)
+google-api-python-client==2.149.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.1
+
+# Utilities
+pytz==2024.2
