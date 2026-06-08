@@ -5,30 +5,30 @@ services:
     restart: unless-stopped
     environment:
       # ── Bắt buộc ──────────────────────────────────
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in Coolify production runtime environment}
+      - TELEGRAM_BOT_TOKEN
       # Tuỳ chọn: đặt username Telegram để chỉ username này được claim bot.
-      TELEGRAM_OWNER_USERNAME: ${TELEGRAM_OWNER_USERNAME:-}
+      - TELEGRAM_OWNER_USERNAME=${TELEGRAM_OWNER_USERNAME:-}
 
       # ── Lớp học ───────────────────────────────────
-      CLASS_IDS: ${CLASS_IDS:-TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01}
+      - CLASS_IDS=${CLASS_IDS:-TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01}
 
       # ── Cấu hình ──────────────────────────────────
-      TIMEZONE: ${TIMEZONE:-Asia/Ho_Chi_Minh}
-      SYNC_HOURS: ${SYNC_HOURS:-0,7,12,17}
-      NOTIFY_BEFORE_HOURS: ${NOTIFY_BEFORE_HOURS:-24}
-      DATABASE_PATH: ${DATABASE_PATH:-/app/data/schedule.db}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      - TIMEZONE=${TIMEZONE:-Asia/Ho_Chi_Minh}
+      - SYNC_HOURS=${SYNC_HOURS:-0,7,12,17}
+      - NOTIFY_BEFORE_HOURS=${NOTIFY_BEFORE_HOURS:-24}
+      - DATABASE_PATH=${DATABASE_PATH:-/app/data/schedule.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
       # ── World Cup 2026 (tuỳ chọn) ────────────────
-      WC_ENABLED: ${WC_ENABLED:-true}
-      WC_DAILY_NOTIFY_HOUR: ${WC_DAILY_NOTIFY_HOUR:-0}
-      WC_LIVE_CHECK_MINUTES: ${WC_LIVE_CHECK_MINUTES:-60}
+      - WC_ENABLED=${WC_ENABLED:-true}
+      - WC_DAILY_NOTIFY_HOUR=${WC_DAILY_NOTIFY_HOUR:-0}
+      - WC_LIVE_CHECK_MINUTES=${WC_LIVE_CHECK_MINUTES:-60}
 
       # ── Google Calendar (tuỳ chọn) ────────────────
-      GOOGLE_CALENDAR_ENABLED: ${GOOGLE_CALENDAR_ENABLED:-false}
-      GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-primary}
-      GOOGLE_CREDENTIALS_FILE: /app/credentials/credentials.json
-      GOOGLE_TOKEN_FILE: /app/data/token.json
+      - GOOGLE_CALENDAR_ENABLED=${GOOGLE_CALENDAR_ENABLED:-false}
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
+      - GOOGLE_CREDENTIALS_FILE=/app/credentials/credentials.json
+      - GOOGLE_TOKEN_FILE=/app/data/token.json
 
     volumes:
       # Database SQLite (persistent)
