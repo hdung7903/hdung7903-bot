@@ -252,5 +252,8 @@ def register_handlers(application) -> None:
     application.add_handler(CommandHandler("status", cmd_status))
     application.add_handler(CommandHandler("dang_ky", cmd_dang_ky))
     application.add_handler(CommandHandler("huy", cmd_huy))
+
+
+def register_fallback_handlers(application) -> None:
     application.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_text))

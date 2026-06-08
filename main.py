@@ -21,7 +21,7 @@ from config import (
     WC_START_DATE, WC_END_DATE, TELEGRAM_OWNER_USERNAME,
     validate_telegram_token,
 )
-from handlers import register_handlers
+from handlers import register_fallback_handlers, register_handlers
 from wc_handlers import register_wc_handlers
 
 logging.basicConfig(
@@ -231,6 +231,7 @@ def main() -> None:
     register_handlers(application)
     if WC_ENABLED:
         register_wc_handlers(application)
+    register_fallback_handlers(application)
     application.add_error_handler(on_error)
 
     if TELEGRAM_OWNER_USERNAME:
