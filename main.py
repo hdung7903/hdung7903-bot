@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from telegram import Bot
-from telegram.ext import Application
+from telegram import Update
+from telegram.ext import Application, ContextTypes
 
 import database as db
 import wc_db
@@ -122,6 +123,15 @@ async def job_wc_result_check(bot: Bot) -> None:
 
 # ── Startup / Shutdown ────────────────────────────────────────────────────────
 
+async def _run_initial_sync(bot: Bot) -> None:
+    try:
+        from sync_service import run_sync
+        result = await run_sync(bot=bot, notify_changes=False)
+        logger.info("✅ Initial sync: %s", result)
+    except Exception:
+        logger.exception("Initial sync lỗi")
+
+
 async def on_startup(application: Application) -> None:
     logger.info("🚀 Bot đang khởi động...")
     db.init_db()
@@ -129,6 +139,8 @@ async def on_startup(application: Application) -> None:
 
     bot = application.bot
     scheduler: AsyncIOScheduler = application.bot_data["scheduler"]
+    me = await bot.get_me()
+    logger.info("🤖 Telegram bot identity: @%s (id=%s)", me.username, me.id)
 
     # ── Lịch học: đồng bộ 0h,7h,12h,17h ─────────────────────────────────────
     hours_str = ",".join(str(h) for h in SYNC_HOURS)
@@ -167,13 +179,8 @@ async def on_startup(application: Application) -> None:
     scheduler.start()
     logger.info("✅ Scheduler đã khởi động. Giờ đồng bộ lịch học: %s", SYNC_HOURS)
 
-    # Sync lần đầu khi khởi động
-    try:
-        from sync_service import run_sync
-        result = await run_sync(bot=bot, notify_changes=False)
-        logger.info("✅ Initial sync: %s", result)
-    except Exception as e:
-        logger.error("Initial sync lỗi: %s", e)
+    # Chạy sync lần đầu ở background để polling nhận lệnh ngay sau startup.
+    application.create_task(_run_initial_sync(bot))
 
     logger.info("🤖 Bot sẵn sàng!")
 
@@ -183,6 +190,17 @@ async def on_shutdown(application: Application) -> None:
     if scheduler and scheduler.running:
         scheduler.shutdown(wait=False)
     logger.info("👋 Bot đã tắt.")
+
+
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.exception("Telegram handler error", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            await update.effective_message.reply_text(
+                "Bot gặp lỗi khi xử lý lệnh này. Kiểm tra logs trên server để xem chi tiết."
+            )
+        except Exception:
+            logger.exception("Failed to send error message to Telegram")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -211,6 +229,7 @@ def main() -> None:
     register_handlers(application)
     if WC_ENABLED:
         register_wc_handlers(application)
+    application.add_error_handler(on_error)
 
     if TELEGRAM_OWNER_USERNAME:
         logger.info("Owner gate enabled for @%s.", TELEGRAM_OWNER_USERNAME)

@@ -217,6 +217,14 @@ async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
 
+@owner_required
+async def cmd_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "Mình đã nhận tin nhắn. Dùng /help để xem các lệnh đang hỗ trợ.",
+        parse_mode="HTML",
+    )
+
+
 # ── Register handlers ─────────────────────────────────────────────────────────
 
 def register_handlers(application) -> None:
@@ -231,3 +239,4 @@ def register_handlers(application) -> None:
     application.add_handler(CommandHandler("dang_ky", cmd_dang_ky))
     application.add_handler(CommandHandler("huy", cmd_huy))
     application.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_text))
