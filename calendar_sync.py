@@ -10,8 +10,22 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+_GCAL_SERVICE = None
+_GCAL_UNAVAILABLE_REASON = None
+
 
 def _get_calendar_service():
+    global _GCAL_SERVICE, _GCAL_UNAVAILABLE_REASON
+    if _GCAL_SERVICE is not None:
+        return _GCAL_SERVICE
+    if _GCAL_UNAVAILABLE_REASON:
+        return None
+
+    if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
+        _GCAL_UNAVAILABLE_REASON = f"credentials file not found: {GOOGLE_CREDENTIALS_FILE}"
+        logger.warning("Google Calendar disabled: %s", _GCAL_UNAVAILABLE_REASON)
+        return None
+
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
@@ -33,12 +47,15 @@ def _get_calendar_service():
             with open(GOOGLE_TOKEN_FILE, "w") as f:
                 f.write(creds.to_json())
 
-        return build("calendar", "v3", credentials=creds)
+        _GCAL_SERVICE = build("calendar", "v3", credentials=creds)
+        return _GCAL_SERVICE
     except ImportError:
-        logger.warning("Google Calendar libraries not installed.")
+        _GCAL_UNAVAILABLE_REASON = "Google Calendar libraries not installed"
+        logger.warning("Google Calendar disabled: %s", _GCAL_UNAVAILABLE_REASON)
         return None
     except Exception as e:
-        logger.error("Failed to get Google Calendar service: %s", e)
+        _GCAL_UNAVAILABLE_REASON = str(e)
+        logger.error("Google Calendar disabled: failed to get service: %s", e)
         return None
 
 
@@ -150,6 +167,8 @@ def sync_event_to_gcal(event: dict) -> bool:
 
 def sync_all_events(events: list[dict]) -> tuple[int, int]:
     if not GOOGLE_CALENDAR_ENABLED:
+        return 0, 0
+    if not _get_calendar_service():
         return 0, 0
     success, fail = 0, 0
     for event in events:
