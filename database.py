@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_connection() -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+    db_dir = os.path.dirname(DATABASE_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
@@ -78,12 +80,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("schedule_events", "is_approximate", "INTEGER DEFAULT 0"),
         ("schedule_events", "date_range_end",  "TEXT"),
         ("schedule_events", "time_raw",        "TEXT"),
+        ("bot_users", "is_admin", "INTEGER DEFAULT 0"),
+        ("bot_users", "subscribed", "INTEGER DEFAULT 1"),
     ]
-    existing = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(schedule_events)").fetchall()
-    }
     for table, col, col_def in new_columns:
+        existing = {
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
         if col not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}")
             logger.info("Migrated DB: added column %s.%s", table, col)
@@ -250,14 +254,57 @@ def upsert_user(chat_id: str, username: str = "", is_admin: bool = False) -> Non
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO bot_users (chat_id, username, is_admin) VALUES (?,?,?)
-               ON CONFLICT(chat_id) DO UPDATE SET username=excluded.username""",
+               ON CONFLICT(chat_id) DO UPDATE SET
+                   username=excluded.username,
+                   is_admin=CASE
+                       WHEN bot_users.is_admin = 1 THEN 1
+                       ELSE excluded.is_admin
+                   END""",
             (str(chat_id), username, int(is_admin)),
         )
 
 
+def has_owner() -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM bot_users WHERE is_admin = 1 LIMIT 1"
+        ).fetchone()
+    return row is not None
+
+
+def is_owner(chat_id: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM bot_users WHERE chat_id = ? AND is_admin = 1",
+            (str(chat_id),),
+        ).fetchone()
+    return row is not None
+
+
+def claim_owner(chat_id: str, username: str = "") -> bool:
+    with get_connection() as conn:
+        existing_owner = conn.execute(
+            "SELECT chat_id FROM bot_users WHERE is_admin = 1 LIMIT 1"
+        ).fetchone()
+        if existing_owner and str(existing_owner["chat_id"]) != str(chat_id):
+            return False
+        conn.execute(
+            """INSERT INTO bot_users (chat_id, username, is_admin, subscribed)
+               VALUES (?, ?, 1, 1)
+               ON CONFLICT(chat_id) DO UPDATE SET
+                   username=excluded.username,
+                   is_admin=1,
+                   subscribed=1""",
+            (str(chat_id), username),
+        )
+    return True
+
+
 def get_subscribed_users() -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM bot_users WHERE subscribed = 1").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM bot_users WHERE subscribed = 1 AND is_admin = 1"
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

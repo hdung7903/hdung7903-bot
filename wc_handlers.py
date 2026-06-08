@@ -28,6 +28,7 @@ from wc_notifier import (
     build_daily_wc_message, build_team_schedule_message,
     build_standings_message, format_match,
 )
+from handlers import owner_required
 
 logger = logging.getLogger(__name__)
 VN_TZ = timezone(timedelta(hours=7))
@@ -44,12 +45,12 @@ async def _send_long(update: Update, text: str) -> None:
 
 
 def _parse_date_arg(arg: str) -> str | None:
-    """Chuyển 'DD-MM' hoặc 'DD/MM' → 'YYYY-MM-DD' (năm 2026/2027)."""
+    """Chuyển 'DD-MM' hoặc 'DD/MM' thành ngày World Cup 2026."""
     m = re.fullmatch(r"(\d{1,2})[-/](\d{1,2})", arg.strip())
     if not m:
         return None
     day, month = int(m.group(1)), int(m.group(2))
-    year = 2026 if month >= 6 else 2027  # WC kéo đến tháng 7/2026
+    year = 2026
     try:
         return datetime(year, month, day).strftime("%Y-%m-%d")
     except ValueError:
@@ -231,6 +232,6 @@ async def cmd_wc_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # ── Register ──────────────────────────────────────────────────────────────────
 
 def register_wc_handlers(application) -> None:
-    application.add_handler(CommandHandler("wc", cmd_wc))
-    application.add_handler(CommandHandler("wchelp", cmd_wc_help))
-    application.add_handler(CommandHandler("wc_help", cmd_wc_help))
+    application.add_handler(CommandHandler("wc", owner_required(cmd_wc)))
+    application.add_handler(CommandHandler("wchelp", owner_required(cmd_wc_help)))
+    application.add_handler(CommandHandler("wc_help", owner_required(cmd_wc_help)))

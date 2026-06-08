@@ -8,8 +8,8 @@ services:
     environment:
       # ── Bắt buộc ──────────────────────────────────
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      # Chat ID của bạn (lấy từ @userinfobot)
-      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS}
+      # Tuỳ chọn: đặt username Telegram để chỉ username này được claim bot.
+      - TELEGRAM_OWNER_USERNAME=${TELEGRAM_OWNER_USERNAME:-}
 
       # ── Lớp học ───────────────────────────────────
       - CLASS_IDS=${CLASS_IDS:-TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01}
@@ -20,6 +20,12 @@ services:
       - NOTIFY_BEFORE_HOURS=24
       - DATABASE_PATH=/app/data/schedule.db
       - LOG_LEVEL=INFO
+
+      # ── World Cup 2026 (tuỳ chọn) ────────────────
+      - WC_ENABLED=${WC_ENABLED:-true}
+      - FOOTBALL_API_KEY=${FOOTBALL_API_KEY:-}
+      - WC_DAILY_NOTIFY_HOUR=${WC_DAILY_NOTIFY_HOUR:-0}
+      - WC_LIVE_CHECK_MINUTES=${WC_LIVE_CHECK_MINUTES:-60}
 
       # ── Google Calendar (tuỳ chọn) ────────────────
       - GOOGLE_CALENDAR_ENABLED=${GOOGLE_CALENDAR_ENABLED:-false}

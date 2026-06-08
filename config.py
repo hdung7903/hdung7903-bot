@@ -1,16 +1,38 @@
 import os
+import re
 from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv()
 
+def _env(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+def _get_telegram_token() -> str:
+    """Read bot token from the canonical env var, with common deploy aliases."""
+    for key in ("TELEGRAM_BOT_TOKEN", "BOT_TOKEN", "TELEGRAM_TOKEN"):
+        value = _env(key)
+        if value:
+            return value
+    return ""
+
+
+def validate_telegram_token(token: str) -> tuple[bool, str]:
+    if not token:
+        return False, "TELEGRAM_BOT_TOKEN is missing or empty"
+    lowered = token.lower()
+    if lowered in {"your_bot_token_here", "change_me", "changeme", "xxx"}:
+        return False, "TELEGRAM_BOT_TOKEN is still a placeholder"
+    if not re.fullmatch(r"\d+:[A-Za-z0-9_-]{20,}", token):
+        return False, "TELEGRAM_BOT_TOKEN does not look like a Telegram BotFather token"
+    return True, "ok"
+
+
 # ── Telegram ─────────────────────────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_IDS  = [
-    cid.strip()
-    for cid in os.getenv("TELEGRAM_CHAT_IDS", "").split(",")
-    if cid.strip()
-]  # Danh sách chat_id được phép nhận thông báo (admin)
+TELEGRAM_BOT_TOKEN = _get_telegram_token()
+# Optional safety gate. Leave empty to let the first /start claim the bot.
+TELEGRAM_OWNER_USERNAME = _env("TELEGRAM_OWNER_USERNAME").lstrip("@")
 
 # ── API trường ────────────────────────────────────────────────────────────────
 SCHEDULE_API_URL = "https://bd.vinhuni.edu.vn/api/lay-lich-hoc"

@@ -2,44 +2,99 @@
 handlers.py – Tất cả Telegram command handlers.
 """
 import logging
+from functools import wraps
 from datetime import datetime, timedelta
 
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
 import database as db
-from config import CLASS_IDS, TIMEZONE
-from notifier import build_schedule_message, build_sync_report, format_event
+from config import CLASS_IDS, TELEGRAM_OWNER_USERNAME
+from notifier import build_schedule_message, build_sync_report
 
 logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _is_registered(chat_id: str) -> bool:
-    users = db.get_subscribed_users()
-    ids = [u["chat_id"] for u in db.get_subscribed_users()]
-    # Check all users (including unsubscribed)
-    with db.get_connection() as conn:
-        row = conn.execute("SELECT 1 FROM bot_users WHERE chat_id=?", (str(chat_id),)).fetchone()
-    return row is not None
+PRIVATE_BOT_MESSAGE = (
+    "Bot này đang chạy ở chế độ cá nhân và không mở quyền sử dụng công khai."
+)
 
 
-def _register_user(update: Update) -> None:
+def _username(update: Update) -> str:
+    user = update.effective_user
+    return (user.username or "").lstrip("@") if user else ""
+
+
+def _display_name(update: Update) -> str:
+    user = update.effective_user
+    if not user:
+        return ""
+    return user.username or user.full_name or ""
+
+
+def _register_user(update: Update, is_owner: bool = False) -> None:
     user = update.effective_user
     chat_id = str(update.effective_chat.id)
-    username = user.username or user.full_name or ""
-    db.upsert_user(chat_id, username)
+    db.upsert_user(chat_id, _display_name(update), is_admin=is_owner)
+
+
+def _can_claim_owner(update: Update) -> bool:
+    if not TELEGRAM_OWNER_USERNAME:
+        return True
+    return _username(update).lower() == TELEGRAM_OWNER_USERNAME.lower()
+
+
+async def _deny(update: Update) -> None:
+    if update.message:
+        await update.message.reply_text(PRIVATE_BOT_MESSAGE)
+
+
+def owner_required(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = str(update.effective_chat.id)
+        if not db.is_owner(chat_id):
+            logger.warning(
+                "Rejected command from unauthorized user chat_id=%s username=%s",
+                chat_id,
+                _username(update) or "-",
+            )
+            await _deny(update)
+            return
+        _register_user(update, is_owner=True)
+        return await func(update, context)
+
+    return wrapper
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
+    chat_id = str(update.effective_chat.id)
+    if not db.is_owner(chat_id):
+        if db.has_owner() or not _can_claim_owner(update):
+            logger.warning(
+                "Rejected /start from unauthorized user chat_id=%s username=%s",
+                chat_id,
+                _username(update) or "-",
+            )
+            await _deny(update)
+            return
+        db.claim_owner(chat_id, _display_name(update))
+        logger.info(
+            "Owner claimed bot: chat_id=%s username=%s",
+            chat_id,
+            _username(update) or "-",
+        )
+    else:
+        _register_user(update, is_owner=True)
+
     name = update.effective_user.first_name or "bạn"
     text = (
         f"👋 Xin chào <b>{name}</b>!\n\n"
-        "🤖 Tôi là <b>Bot Lịch Học VinhUni</b>.\n"
-        "Tôi sẽ tự động đồng bộ lịch học và nhắc nhở bạn trước <b>1 ngày</b>.\n\n"
+        "🤖 Đây là <b>bot cá nhân</b> của bạn.\n"
+        "Bot tự động đồng bộ lịch học, nhắc lịch và đã sẵn sàng để tích hợp thêm service sau này.\n\n"
         "<b>📋 Các lệnh có sẵn:</b>\n"
         "/lich – Xem lịch học 7 ngày tới\n"
         "/lich_thang – Xem lịch học tháng này\n"
@@ -55,20 +110,21 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(text, parse_mode="HTML")
 
 
+@owner_required
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await cmd_start(update, context)
 
 
+@owner_required
 async def cmd_lich(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     await update.message.reply_text("⏳ Đang lấy lịch học...", parse_mode="HTML")
     events = db.get_upcoming_events(days=7)
     msg = build_schedule_message(events, "📅 Lịch học 7 ngày tới")
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
+@owner_required
 async def cmd_lich_thang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     await update.message.reply_text("⏳ Đang lấy lịch học...", parse_mode="HTML")
     events = db.get_upcoming_events(days=31)
     msg = build_schedule_message(events, "📅 Lịch học tháng này")
@@ -81,24 +137,24 @@ async def cmd_lich_thang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(msg, parse_mode="HTML")
 
 
+@owner_required
 async def cmd_hom_nay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     today = datetime.now().strftime("%Y-%m-%d")
     events = db.get_events_for_date(today)
     msg = build_schedule_message(events, "📅 Lịch học hôm nay")
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
+@owner_required
 async def cmd_ngay_mai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     events = db.get_events_for_date(tomorrow)
     msg = build_schedule_message(events, "📅 Lịch học ngày mai")
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
+@owner_required
 async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     await update.message.reply_text("🔄 Đang đồng bộ lịch học...", parse_mode="HTML")
     from sync_service import run_sync
     result = await run_sync(bot=context.bot, notify_changes=False)
@@ -106,8 +162,8 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
+@owner_required
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     last_sync = db.get_last_sync()
     users = db.get_subscribed_users()
     total_events = len(db.get_all_events())
@@ -131,8 +187,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(text, parse_mode="HTML")
 
 
+@owner_required
 async def cmd_dang_ky(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     chat_id = str(update.effective_chat.id)
     db.set_user_subscription(chat_id, True)
     await update.message.reply_text(
@@ -142,8 +198,8 @@ async def cmd_dang_ky(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
 
+@owner_required
 async def cmd_huy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _register_user(update)
     chat_id = str(update.effective_chat.id)
     db.set_user_subscription(chat_id, False)
     await update.message.reply_text(
@@ -153,6 +209,7 @@ async def cmd_huy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+@owner_required
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "❓ Lệnh không hợp lệ. Dùng /help để xem danh sách lệnh.",

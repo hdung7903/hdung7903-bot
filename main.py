@@ -15,7 +15,8 @@ import wc_db
 from config import (
     LOG_LEVEL, SYNC_HOURS, TELEGRAM_BOT_TOKEN, TIMEZONE,
     WC_ENABLED, WC_DAILY_NOTIFY_HOUR, WC_LIVE_CHECK_MINUTES,
-    WC_START_DATE, WC_END_DATE,
+    WC_START_DATE, WC_END_DATE, TELEGRAM_OWNER_USERNAME,
+    validate_telegram_token,
 )
 from handlers import register_handlers
 from wc_handlers import register_wc_handlers
@@ -27,24 +28,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
-
-# ── DEBUG ENV VARS ────────────────────────────────────────────────────────────
-import os
-logger.info("--- DEBUGGING ENVIRONMENT VARIABLES ---")
-logger.info("Current working directory: %s", os.getcwd())
-logger.info("Files in current directory: %s", os.listdir("."))
-
-for key in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_IDS", "CLASS_IDS", "TIMEZONE", "GOOGLE_CALENDAR_ENABLED"]:
-    val = os.environ.get(key)
-    if val is None:
-        logger.info("ENV: %s is MISSING", key)
-    elif val == "":
-        logger.info("ENV: %s is EMPTY STRING", key)
-    else:
-        # Mask if it's the token
-        display_val = val if key != "TELEGRAM_BOT_TOKEN" else f"{val[:6]}...{val[-4:]}" if len(val) > 10 else "***"
-        logger.info("ENV: %s = %r", key, display_val)
-# ──────────────────────────────────────────────────────────────────────────────
 
 VN_TZ = timezone(timedelta(hours=7))
 
@@ -208,8 +191,13 @@ async def on_shutdown(application: Application) -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    if not TELEGRAM_BOT_TOKEN:
-        logger.critical("❌ TELEGRAM_BOT_TOKEN chưa được set!")
+    token_ok, token_message = validate_telegram_token(TELEGRAM_BOT_TOKEN)
+    if not token_ok:
+        logger.critical("Telegram bot token invalid: %s", token_message)
+        logger.critical(
+            "Set TELEGRAM_BOT_TOKEN in Coolify Environment Variables. "
+            "BOT_TOKEN and TELEGRAM_TOKEN are also accepted as aliases."
+        )
         sys.exit(1)
 
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
@@ -226,6 +214,11 @@ def main() -> None:
     register_handlers(application)
     if WC_ENABLED:
         register_wc_handlers(application)
+
+    if TELEGRAM_OWNER_USERNAME:
+        logger.info("Owner gate enabled for @%s.", TELEGRAM_OWNER_USERNAME)
+    else:
+        logger.info("Owner gate enabled: first Telegram user who sends /start will claim the bot.")
 
     logger.info("▶️  Bot bắt đầu polling...")
     application.run_polling(

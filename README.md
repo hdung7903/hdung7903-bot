@@ -1,6 +1,7 @@
 # 🤖 VinhUni Schedule Telegram Bot
 
 Bot Telegram tự động **đồng bộ lịch học** từ hệ thống VinhUni, gửi **nhắc nhở 24h trước** mỗi buổi học, và đẩy lên **Google Calendar**. Hỗ trợ deploy trên **Coolify** qua Docker.
+Bot chạy theo mô hình **cá nhân**: chỉ owner mới dùng được lệnh và nhận thông báo.
 
 ---
 
@@ -30,11 +31,11 @@ cp .env.example .env
 Chỉnh sửa `.env`:
 ```env
 TELEGRAM_BOT_TOKEN=your_token_here
-TELEGRAM_CHAT_IDS=your_chat_id_here
+TELEGRAM_OWNER_USERNAME=your_telegram_username
 CLASS_IDS=TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01
 ```
 
-> **Lấy Chat ID:** Nhắn tin `/start` cho [@userinfobot](https://t.me/userinfobot)
+`TELEGRAM_OWNER_USERNAME` là tuỳ chọn nhưng nên đặt trên server. Nếu để trống, người đầu tiên nhắn `/start` cho bot sẽ trở thành owner.
 
 ### 2. Chạy với Docker Compose
 
@@ -116,6 +117,24 @@ GOOGLE_CALENDAR_ENABLED=true
 4. Tab **Environment Variables** → thêm tất cả biến từ `.env.example`
 5. Tab **Storages** → thêm persistent volume: `/app/data`
 6. **Deploy**
+7. Mở Telegram, nhắn `/start` cho bot để claim owner nếu DB chưa có owner
+
+Biến bắt buộc trên Coolify:
+
+```env
+TELEGRAM_BOT_TOKEN=123456789:AA...
+CLASS_IDS=TA01.NVSPTH.QY01,TA01-NVSPGVTHCS.THPT-QY01
+DATABASE_PATH=/app/data/schedule.db
+TIMEZONE=Asia/Ho_Chi_Minh
+```
+
+Biến khuyến nghị cho bot cá nhân:
+
+```env
+TELEGRAM_OWNER_USERNAME=username_cua_ban
+```
+
+Nếu log báo `Telegram bot token invalid`, kiểm tra lại tên biến là `TELEGRAM_BOT_TOKEN` và giá trị token lấy trực tiếp từ @BotFather, không để `your_bot_token_here`.
 
 ### Phương án 2: Docker image trực tiếp
 
@@ -128,7 +147,7 @@ docker run -d \
   --name vinhuni-bot \
   --restart unless-stopped \
   -e TELEGRAM_BOT_TOKEN=xxx \
-  -e TELEGRAM_CHAT_IDS=xxx \
+  -e TELEGRAM_OWNER_USERNAME=your_telegram_username \
   -e CLASS_IDS=TA01.NVSPTH.QY01 \
   -v $(pwd)/data:/app/data \
   vinhuni-bot
@@ -161,7 +180,7 @@ telegram/
 | Biến | Mặc định | Mô tả |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | *bắt buộc* | Token từ @BotFather |
-| `TELEGRAM_CHAT_IDS` | *bắt buộc* | Chat ID nhận thông báo |
+| `TELEGRAM_OWNER_USERNAME` | trống | Username được phép claim bot; để trống thì user đầu tiên `/start` sẽ claim |
 | `CLASS_IDS` | `TA01.NVSPTH.QY01,...` | Danh sách lớp học |
 | `SYNC_HOURS` | `0,7,12,17` | Giờ đồng bộ hàng ngày |
 | `NOTIFY_BEFORE_HOURS` | `24` | Nhắc trước N giờ |
