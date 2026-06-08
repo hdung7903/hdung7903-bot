@@ -28,6 +28,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ── DEBUG ENV VARS ────────────────────────────────────────────────────────────
+import os
+logger.info("--- DEBUGGING ENVIRONMENT VARIABLES ---")
+logger.info("Current working directory: %s", os.getcwd())
+logger.info("Files in current directory: %s", os.listdir("."))
+logger.info("Environment keys present: %s", list(os.environ.keys()))
+token_in_env = os.environ.get("TELEGRAM_BOT_TOKEN")
+if token_in_env:
+    logger.info("TELEGRAM_BOT_TOKEN length: %d", len(token_in_env))
+    logger.info("TELEGRAM_BOT_TOKEN start: %s...", token_in_env[:5])
+else:
+    logger.info("TELEGRAM_BOT_TOKEN is NOT present in os.environ")
+# ──────────────────────────────────────────────────────────────────────────────
+
 VN_TZ = timezone(timedelta(hours=7))
 
 
