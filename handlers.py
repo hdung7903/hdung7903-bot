@@ -9,7 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
 import database as db
-from config import CLASS_IDS, TELEGRAM_OWNER_USERNAME
+from config import CLASS_IDS, TELEGRAM_OWNER_USERNAME, WC_ENABLED
 from notifier import build_schedule_message, build_sync_report
 
 logger = logging.getLogger(__name__)
@@ -72,25 +72,38 @@ def owner_required(func):
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = str(update.effective_chat.id)
-    if not db.is_owner(chat_id):
-        if db.has_owner() or not _can_claim_owner(update):
-            logger.warning(
-                "Rejected /start from unauthorized user chat_id=%s username=%s",
-                chat_id,
-                _username(update) or "-",
-            )
-            await _deny(update)
-            return
-        db.claim_owner(chat_id, _display_name(update))
+    if _can_claim_owner(update):
+        db.set_owner(chat_id, _display_name(update))
         logger.info(
-            "Owner claimed bot: chat_id=%s username=%s",
+            "Owner verified from TELEGRAM_OWNER_USERNAME: chat_id=%s username=%s",
             chat_id,
             _username(update) or "-",
         )
-    else:
-        _register_user(update, is_owner=True)
+    elif not db.is_owner(chat_id):
+        logger.warning(
+            "Rejected /start from unauthorized user chat_id=%s username=%s owner_username=%s",
+            chat_id,
+            _username(update) or "-",
+            TELEGRAM_OWNER_USERNAME or "-",
+        )
+        await _deny(update)
+        return
+
+    _register_user(update, is_owner=True)
 
     name = update.effective_user.first_name or "bạn"
+    wc_commands = ""
+    if WC_ENABLED:
+        wc_commands = (
+            "\n\n"
+            "<b>⚽ World Cup 2026:</b>\n"
+            "/wc – Lịch trận hôm nay\n"
+            "/wc live – Trận đang diễn ra\n"
+            "/wc ket_qua – Kết quả hôm nay\n"
+            "/wc 12-06 – Lịch theo ngày Việt Nam\n"
+            "/wc bang – Bảng xếp hạng\n"
+            "/wchelp – Trợ giúp World Cup"
+        )
     text = (
         f"👋 Xin chào <b>{name}</b>!\n\n"
         "🤖 Đây là <b>bot cá nhân</b> của bạn.\n"
@@ -104,7 +117,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/status – Xem trạng thái bot\n"
         "/dang_ky – Đăng ký nhận thông báo\n"
         "/huy – Hủy đăng ký thông báo\n"
-        "/help – Trợ giúp\n\n"
+        "/help – Trợ giúp"
+        f"{wc_commands}\n\n"
         f"📚 Đang theo dõi lớp: <code>{', '.join(CLASS_IDS)}</code>"
     )
     await update.message.reply_text(text, parse_mode="HTML")

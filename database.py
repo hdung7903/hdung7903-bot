@@ -300,6 +300,21 @@ def claim_owner(chat_id: str, username: str = "") -> bool:
     return True
 
 
+def set_owner(chat_id: str, username: str = "") -> None:
+    """Set the single bot owner, replacing any owner claimed before."""
+    with get_connection() as conn:
+        conn.execute("UPDATE bot_users SET is_admin = 0")
+        conn.execute(
+            """INSERT INTO bot_users (chat_id, username, is_admin, subscribed)
+               VALUES (?, ?, 1, 1)
+               ON CONFLICT(chat_id) DO UPDATE SET
+                   username=excluded.username,
+                   is_admin=1,
+                   subscribed=1""",
+            (str(chat_id), username),
+        )
+
+
 def get_subscribed_users() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(

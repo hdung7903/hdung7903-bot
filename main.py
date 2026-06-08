@@ -2,6 +2,7 @@
 main.py – Entry point: khởi động bot, scheduler, module lịch học + WC 2026.
 """
 import logging
+import asyncio
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -181,7 +182,7 @@ async def on_startup(application: Application) -> None:
     logger.info("✅ Scheduler đã khởi động. Giờ đồng bộ lịch học: %s", SYNC_HOURS)
 
     # Chạy sync lần đầu ở background để polling nhận lệnh ngay sau startup.
-    application.create_task(_run_initial_sync(bot))
+    asyncio.create_task(_run_initial_sync(bot))
 
     logger.info("🤖 Bot sẵn sàng!")
 
