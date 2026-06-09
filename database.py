@@ -104,6 +104,8 @@ def upsert_event(event: dict) -> tuple[bool, bool]:
         existing = conn.execute(
             "SELECT * FROM schedule_events WHERE id = ?", (event["id"],)
         ).fetchone()
+        if existing is None:
+            existing = _find_legacy_event(conn, event)
 
         now = datetime.now().isoformat()
 
@@ -153,6 +155,38 @@ def upsert_event(event: dict) -> tuple[bool, bool]:
                 ),
             )
         return False, changed
+
+
+def _find_legacy_event(conn: sqlite3.Connection, event: dict):
+    """Tìm event đã lưu bằng ID cũ, rồi migrate sang ID ổn định mới."""
+    for legacy_id in event.get("legacy_ids") or []:
+        if legacy_id == event["id"]:
+            continue
+        existing = conn.execute(
+            "SELECT * FROM schedule_events WHERE id = ?", (legacy_id,)
+        ).fetchone()
+        if not existing:
+            continue
+
+        conflict = conn.execute(
+            "SELECT 1 FROM schedule_events WHERE id = ?", (event["id"],)
+        ).fetchone()
+        if conflict:
+            return None
+
+        conn.execute(
+            "UPDATE schedule_events SET id = ?, updated_at = ? WHERE id = ?",
+            (event["id"], datetime.now().isoformat(), legacy_id),
+        )
+        conn.execute(
+            "UPDATE notifications_sent SET event_id = ? WHERE event_id = ?",
+            (event["id"], legacy_id),
+        )
+        logger.info("Migrated event id %s -> %s", legacy_id, event["id"])
+        return conn.execute(
+            "SELECT * FROM schedule_events WHERE id = ?", (event["id"],)
+        ).fetchone()
+    return None
 
 
 def _detect_change(existing, new: dict) -> bool:

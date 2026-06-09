@@ -220,18 +220,26 @@ def _event_to_gcal(event: dict) -> dict:
     return gcal
 
 
-def _find_existing_gcal_event(service, bot_event_id: str) -> str | None:
-    try:
-        result = service.events().list(
-            calendarId=GOOGLE_CALENDAR_ID,
-            privateExtendedProperty=f"bot_event_id={bot_event_id}",
-            maxResults=1,
-        ).execute()
-        items = result.get("items", [])
-        return items[0]["id"] if items else None
-    except Exception as e:
-        logger.error("Error searching gcal event: %s", e)
-        return None
+def _find_existing_gcal_event(service, event: dict) -> str | None:
+    event_ids = [event["id"], *(event.get("legacy_ids") or [])]
+    seen: set[str] = set()
+    for bot_event_id in event_ids:
+        if not bot_event_id or bot_event_id in seen:
+            continue
+        seen.add(bot_event_id)
+        try:
+            result = service.events().list(
+                calendarId=GOOGLE_CALENDAR_ID,
+                privateExtendedProperty=f"bot_event_id={bot_event_id}",
+                maxResults=1,
+            ).execute()
+            items = result.get("items", [])
+            if items:
+                return items[0]["id"]
+        except Exception as e:
+            logger.error("Error searching gcal event by bot id %s: %s", bot_event_id, e)
+            return None
+    return None
 
 
 def sync_event_to_gcal(event: dict, service=None) -> bool:
@@ -248,7 +256,7 @@ def sync_event_to_gcal(event: dict, service=None) -> bool:
     if not gcal_event.get("start"):
         return False
 
-    existing_id = _find_existing_gcal_event(service, event["id"])
+    existing_id = _find_existing_gcal_event(service, event)
     try:
         if existing_id:
             service.events().update(

@@ -30,10 +30,25 @@ logger = logging.getLogger(__name__)
 #  Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _make_event_id(class_id: str, date: str, subject: str, session: str) -> str:
-    """Hash ổn định để detect thay đổi."""
-    raw = f"{class_id}|{date}|{subject.strip()}|{session}"
+def _hash_event_key(raw: str) -> str:
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _make_legacy_event_id(class_id: str, date: str, subject: str, session: str) -> str:
+    """ID cũ, giữ để tìm/migrate event đã sync trước đây."""
+    raw = f"{class_id}|{date}|{subject.strip()}|{session}"
+    return _hash_event_key(raw)
+
+
+def _make_event_id(class_id: str, subject: str, session: str, occurrence: int) -> str:
+    """
+    ID ổn định hơn cho cùng một buổi học.
+
+    Không đưa ngày/link vào ID để khi lịch đổi ngày hoặc link Teams đổi thì DB và
+    Google Calendar update event hiện có thay vì tạo event mới.
+    """
+    raw = f"{class_id}|{subject.strip()}|{session}|{occurrence}"
+    return _hash_event_key(raw)
 
 
 def _apply_default_times(session: str, start_override: str = None) -> tuple[str, str]:
@@ -235,6 +250,12 @@ def parse_schedule_response(class_id: str, data) -> list[dict]:
                     break
 
     seen_ids: set[str] = set()
+    occurrence_by_key: dict[tuple[str, str], int] = {}
+
+    def _next_occurrence(subject: str, session: str) -> int:
+        key = (subject.strip().lower(), session)
+        occurrence_by_key[key] = occurrence_by_key.get(key, 0) + 1
+        return occurrence_by_key[key]
 
     for item in items:
         if not isinstance(item, dict):
@@ -251,11 +272,14 @@ def parse_schedule_response(class_id: str, data) -> list[dict]:
 
         if not parsed_times:
             # Không parse được ngày → vẫn lưu nhưng mark approximate
-            event_id = _make_event_id(class_id, "unknown", subject, "sang")
+            occurrence = _next_occurrence(subject, "sang")
+            event_id = _make_event_id(class_id, subject, "sang", occurrence)
+            legacy_id = _make_legacy_event_id(class_id, "unknown", subject, "sang")
             if event_id not in seen_ids:
                 seen_ids.add(event_id)
                 events.append({
                     "id": event_id,
+                    "legacy_ids": [legacy_id],
                     "class_id": class_id,
                     "subject": subject,
                     "teacher": teacher,
@@ -280,13 +304,16 @@ def parse_schedule_response(class_id: str, data) -> list[dict]:
 
             start_time, end_time = _apply_default_times(session)
 
-            event_id = _make_event_id(class_id, date or "unknown", subject, session)
+            occurrence = _next_occurrence(subject, session)
+            event_id = _make_event_id(class_id, subject, session, occurrence)
+            legacy_id = _make_legacy_event_id(class_id, date or "unknown", subject, session)
             if event_id in seen_ids:
                 continue
             seen_ids.add(event_id)
 
             events.append({
                 "id": event_id,
+                "legacy_ids": [legacy_id],
                 "class_id": class_id,
                 "subject": subject,
                 "teacher": teacher,
