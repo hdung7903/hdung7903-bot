@@ -138,6 +138,7 @@ def _build_bot_commands() -> list[BotCommand]:
         BotCommand("ngay_mai", "Xem lịch học ngày mai"),
         BotCommand("sync", "Đồng bộ lịch học ngay"),
         BotCommand("status", "Xem trạng thái bot"),
+        BotCommand("gcal_status", "Kiểm tra Google Calendar"),
         BotCommand("dang_ky", "Đăng ký nhận thông báo"),
         BotCommand("huy", "Hủy nhận thông báo"),
         BotCommand("qrbank", "QR chuyển khoản ngân hàng"),

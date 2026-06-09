@@ -1,7 +1,12 @@
 import os
 import re
 from datetime import date
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv() -> None:
+        return None
 
 load_dotenv()
 
@@ -57,8 +62,11 @@ DEFAULT_SESSION_TIMES = {
 GOOGLE_CALENDAR_ENABLED    = os.getenv("GOOGLE_CALENDAR_ENABLED", "false").lower() == "true"
 GOOGLE_CREDENTIALS_FILE    = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
 GOOGLE_TOKEN_FILE          = os.getenv("GOOGLE_TOKEN_FILE", "token.json")
+GOOGLE_CREDENTIALS_JSON    = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+GOOGLE_TOKEN_JSON          = os.getenv("GOOGLE_TOKEN_JSON", "")
 GOOGLE_CALENDAR_ID         = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 GOOGLE_CALENDAR_SCOPES     = ["https://www.googleapis.com/auth/calendar"]
+GOOGLE_ALLOW_LOCAL_OAUTH   = os.getenv("GOOGLE_ALLOW_LOCAL_OAUTH", "false").lower() == "true"
 
 # ── Cron schedule ─────────────────────────────────────────────────────────────
 # Giờ chạy đồng bộ lịch (UTC+7 → server dùng giờ địa phương nếu TZ=Asia/Ho_Chi_Minh)

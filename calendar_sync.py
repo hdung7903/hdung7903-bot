@@ -5,7 +5,8 @@ import logging
 import os
 from config import (
     GOOGLE_CALENDAR_ENABLED, GOOGLE_CALENDAR_ID, GOOGLE_CALENDAR_SCOPES,
-    GOOGLE_CREDENTIALS_FILE, GOOGLE_TOKEN_FILE, TIMEZONE,
+    GOOGLE_CREDENTIALS_FILE, GOOGLE_TOKEN_FILE, GOOGLE_CREDENTIALS_JSON,
+    GOOGLE_TOKEN_JSON, GOOGLE_ALLOW_LOCAL_OAUTH, TIMEZONE,
 )
 
 logger = logging.getLogger(__name__)
@@ -14,12 +15,38 @@ _GCAL_SERVICE = None
 _GCAL_UNAVAILABLE_REASON = None
 
 
+def _write_secret_json_if_needed(path: str, value: str, label: str) -> None:
+    if not value or os.path.exists(path):
+        return
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(value.strip())
+    logger.info("Google Calendar %s materialized from environment.", label)
+
+
+def _materialize_google_secrets() -> None:
+    _write_secret_json_if_needed(
+        GOOGLE_CREDENTIALS_FILE,
+        GOOGLE_CREDENTIALS_JSON,
+        "credentials",
+    )
+    _write_secret_json_if_needed(
+        GOOGLE_TOKEN_FILE,
+        GOOGLE_TOKEN_JSON,
+        "token",
+    )
+
+
 def _get_calendar_service():
     global _GCAL_SERVICE, _GCAL_UNAVAILABLE_REASON
     if _GCAL_SERVICE is not None:
         return _GCAL_SERVICE
     if _GCAL_UNAVAILABLE_REASON:
         return None
+
+    _materialize_google_secrets()
 
     if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
         _GCAL_UNAVAILABLE_REASON = f"credentials file not found: {GOOGLE_CREDENTIALS_FILE}"
@@ -40,10 +67,21 @@ def _get_calendar_service():
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
+                if not GOOGLE_ALLOW_LOCAL_OAUTH:
+                    _GCAL_UNAVAILABLE_REASON = (
+                        f"token file not found or invalid: {GOOGLE_TOKEN_FILE}. "
+                        "Generate token.json locally, mount it to the container, or set "
+                        "GOOGLE_ALLOW_LOCAL_OAUTH=true only when running interactively."
+                    )
+                    logger.warning("Google Calendar disabled: %s", _GCAL_UNAVAILABLE_REASON)
+                    return None
                 flow = InstalledAppFlow.from_client_secrets_file(
                     GOOGLE_CREDENTIALS_FILE, GOOGLE_CALENDAR_SCOPES
                 )
                 creds = flow.run_local_server(port=0)
+            token_dir = os.path.dirname(GOOGLE_TOKEN_FILE)
+            if token_dir:
+                os.makedirs(token_dir, exist_ok=True)
             with open(GOOGLE_TOKEN_FILE, "w") as f:
                 f.write(creds.to_json())
 
@@ -57,6 +95,40 @@ def _get_calendar_service():
         _GCAL_UNAVAILABLE_REASON = str(e)
         logger.error("Google Calendar disabled: failed to get service: %s", e)
         return None
+
+
+def get_gcal_status(check_service: bool = False) -> dict:
+    _materialize_google_secrets()
+    status = {
+        "enabled": GOOGLE_CALENDAR_ENABLED,
+        "calendar_id": GOOGLE_CALENDAR_ID,
+        "credentials_file": GOOGLE_CREDENTIALS_FILE,
+        "credentials_exists": os.path.exists(GOOGLE_CREDENTIALS_FILE),
+        "token_file": GOOGLE_TOKEN_FILE,
+        "token_exists": os.path.exists(GOOGLE_TOKEN_FILE),
+        "allow_local_oauth": GOOGLE_ALLOW_LOCAL_OAUTH,
+        "available": False,
+        "reason": "",
+    }
+
+    if not GOOGLE_CALENDAR_ENABLED:
+        status["reason"] = "GOOGLE_CALENDAR_ENABLED=false"
+        return status
+    if not status["credentials_exists"]:
+        status["reason"] = f"missing credentials file: {GOOGLE_CREDENTIALS_FILE}"
+        return status
+    if not status["token_exists"] and not GOOGLE_ALLOW_LOCAL_OAUTH:
+        status["reason"] = f"missing token file: {GOOGLE_TOKEN_FILE}"
+        return status
+
+    if check_service:
+        service = _get_calendar_service()
+        status["available"] = service is not None
+        status["reason"] = _GCAL_UNAVAILABLE_REASON or ("ok" if service else "service unavailable")
+    else:
+        status["available"] = True
+        status["reason"] = "looks configured"
+    return status
 
 
 def _event_to_gcal(event: dict) -> dict:

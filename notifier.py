@@ -2,6 +2,7 @@
 notifier.py – Format thông báo Telegram, hỗ trợ link Teams.
 """
 import logging
+from html import escape
 from datetime import datetime, timedelta
 
 import database as db
@@ -42,18 +43,20 @@ def format_event(event: dict, show_link: bool = True) -> str:
     if event.get("date_range_end"):
         range_str = f" → {_fmt_date(event['date_range_end'])}"
 
-    teacher = (event.get("teacher") or "").strip()
-    link    = (event.get("link") or "").strip()
+    subject = escape((event.get("subject") or "Môn học").strip())
+    teacher = escape((event.get("teacher") or "").strip())
+    link    = escape((event.get("link") or "").strip(), quote=True)
+    class_id = escape((event.get("class_id") or "").strip())
 
     lines = [
-        f"📚 <b>{event.get('subject', 'Môn học')}</b>",
+        f"📚 <b>{subject}</b>",
         f"  {session_lbl}  |  {date_display}{range_str}{time_str}",
     ]
     if teacher:
         lines.append(f"  👨‍🏫 {teacher}")
     if show_link and link:
         lines.append(f"  🔗 <a href='{link}'>Tham gia Teams</a>")
-    lines.append(f"  🆔 <code>{event.get('class_id', '')}</code>")
+    lines.append(f"  🆔 <code>{class_id}</code>")
 
     return "\n".join(lines)
 

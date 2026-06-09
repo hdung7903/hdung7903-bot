@@ -21,6 +21,8 @@ from notifier import build_schedule_message, build_sync_report
 
 logger = logging.getLogger(__name__)
 
+MAX_TELEGRAM_MESSAGE = 3900
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 PRIVATE_BOT_MESSAGE = (
@@ -98,6 +100,18 @@ def owner_required(func):
     return wrapper
 
 
+async def _reply_html_chunks(update: Update, text: str) -> None:
+    """Send long HTML safely without splitting in the middle of a tag line."""
+    current = ""
+    for line in text.splitlines(keepends=True):
+        if len(current) + len(line) > MAX_TELEGRAM_MESSAGE and current:
+            await update.message.reply_text(current, parse_mode="HTML")
+            current = ""
+        current += line
+    if current:
+        await update.message.reply_text(current, parse_mode="HTML")
+
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -145,6 +159,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/ngay_mai – Xem lịch học ngày mai\n"
         "/sync – Đồng bộ lịch ngay bây giờ\n"
         "/status – Xem trạng thái bot\n"
+        "/gcal_status – Kiểm tra Google Calendar\n"
         "/dang_ky – Đăng ký nhận thông báo\n"
         "/huy – Hủy đăng ký thông báo\n"
         "/qrbank – QR chuyển khoản ngân hàng\n"
@@ -173,13 +188,7 @@ async def cmd_lich_thang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("⏳ Đang lấy lịch học...", parse_mode="HTML")
     events = db.get_upcoming_events(days=31)
     msg = build_schedule_message(events, "📅 Lịch học tháng này")
-    # Chia nhỏ nếu quá dài
-    if len(msg) > 4000:
-        chunks = [msg[i:i+4000] for i in range(0, len(msg), 4000)]
-        for chunk in chunks:
-            await update.message.reply_text(chunk, parse_mode="HTML")
-    else:
-        await update.message.reply_text(msg, parse_mode="HTML")
+    await _reply_html_chunks(update, msg)
 
 
 @owner_required
@@ -228,6 +237,29 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"🔔 Nhắc nhở: <b>24h trước lịch học</b>\n"
         f"📚 Lớp đang theo dõi:\n"
         + "\n".join(f"  • <code>{cid}</code>" for cid in CLASS_IDS)
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
+
+
+@owner_required
+async def cmd_gcal_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from calendar_sync import get_gcal_status
+
+    status = get_gcal_status(check_service=False)
+    enabled = "bật" if status["enabled"] else "tắt"
+    credentials = "có" if status["credentials_exists"] else "thiếu"
+    token = "có" if status["token_exists"] else "thiếu"
+    available = "có vẻ sẵn sàng" if status["available"] else "chưa sẵn sàng"
+
+    text = (
+        "📅 <b>Google Calendar Status</b>\n\n"
+        f"Enabled: <b>{enabled}</b>\n"
+        f"Calendar ID: <code>{status['calendar_id']}</code>\n"
+        f"Credentials: <b>{credentials}</b> <code>{status['credentials_file']}</code>\n"
+        f"Token: <b>{token}</b> <code>{status['token_file']}</code>\n"
+        f"Local OAuth: <b>{status['allow_local_oauth']}</b>\n"
+        f"State: <b>{available}</b>\n"
+        f"Reason: <code>{status['reason']}</code>"
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -349,6 +381,7 @@ def register_handlers(application) -> None:
     application.add_handler(CommandHandler("ngay_mai", cmd_ngay_mai))
     application.add_handler(CommandHandler("sync", cmd_sync))
     application.add_handler(CommandHandler("status", cmd_status))
+    application.add_handler(CommandHandler("gcal_status", cmd_gcal_status))
     application.add_handler(CommandHandler("dang_ky", cmd_dang_ky))
     application.add_handler(CommandHandler("huy", cmd_huy))
     application.add_handler(CommandHandler("qrbank", cmd_qrbank))
