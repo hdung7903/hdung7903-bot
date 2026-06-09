@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 MAX_TELEGRAM_MESSAGE = 3900
 HANDLER_TIMEOUT_SECONDS = 25
+QR_MESSAGE_TTL_SECONDS = 5 * 60
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -372,6 +373,14 @@ def _qr_url(bank: dict, amount: int | None = None) -> str:
     return url
 
 
+async def _delete_message_later(message, seconds: int) -> None:
+    await asyncio.sleep(seconds)
+    try:
+        await message.delete()
+    except Exception as e:
+        logger.warning("Could not delete expiring QR message: %s", e)
+
+
 async def _send_qr_bank(update: Update, bank: dict, amount: int | None = None) -> None:
     amount_line = (
         f"Số tiền: <b>{_format_vnd(amount)}</b>"
@@ -382,21 +391,23 @@ async def _send_qr_bank(update: Update, bank: dict, amount: int | None = None) -
         f"🏦 <b>{bank['name']}</b>\n"
         f"STK: <code>{bank['account']}</code>\n"
         f"{amount_line}\n\n"
-        "Quét QR để chuyển khoản."
+        "Quét QR để chuyển khoản.\n"
+        "QR này sẽ tự xóa sau 5 phút."
     )
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.message.reply_photo(
+        sent = await update.callback_query.message.reply_photo(
             photo=_qr_url(bank, amount),
             caption=caption,
             parse_mode="HTML",
         )
     else:
-        await update.message.reply_photo(
+        sent = await update.message.reply_photo(
             photo=_qr_url(bank, amount),
             caption=caption,
             parse_mode="HTML",
         )
+    asyncio.create_task(_delete_message_later(sent, QR_MESSAGE_TTL_SECONDS))
 
 
 async def _show_qr_amount_options(update: Update, bank: dict) -> None:
