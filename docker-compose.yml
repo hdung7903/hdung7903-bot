@@ -27,17 +27,18 @@ services:
       # ── Google Calendar (tuỳ chọn) ────────────────
       - GOOGLE_CALENDAR_ENABLED=${GOOGLE_CALENDAR_ENABLED:-false}
       - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
-      - GOOGLE_CREDENTIALS_FILE=/app/credentials/credentials.json
-      - GOOGLE_TOKEN_FILE=/app/data/token.json
+      - GOOGLE_CREDENTIALS_FILE=${GOOGLE_CREDENTIALS_FILE:-/app/data/google_credentials.json}
+      - GOOGLE_TOKEN_FILE=${GOOGLE_TOKEN_FILE:-/app/data/google_token.json}
+      - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON:-}
+      - GOOGLE_TOKEN_JSON=${GOOGLE_TOKEN_JSON:-}
+      - GOOGLE_ALLOW_LOCAL_OAUTH=${GOOGLE_ALLOW_LOCAL_OAUTH:-false}
 
     volumes:
       # Database SQLite (persistent)
       - bot_data:/app/data
-      # Google credentials (nếu dùng Google Calendar)
-      - ./credentials:/app/credentials:ro
 
     healthcheck:
-      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/schedule.db')"]
+      test: ["CMD", "python", "healthcheck.py"]
       interval: 60s
       timeout: 10s
       retries: 3

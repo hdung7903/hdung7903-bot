@@ -25,8 +25,8 @@ COPY . .
 # Tạo thư mục data
 RUN mkdir -p /app/data
 
-# Volume cho database và credentials
-VOLUME ["/app/data", "/app/credentials"]
+# Volume cho database, Google token và materialized secrets
+VOLUME ["/app/data"]
 
 # Chạy bot
 CMD ["python", "main.py"]

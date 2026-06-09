@@ -15,28 +15,36 @@ _GCAL_SERVICE = None
 _GCAL_UNAVAILABLE_REASON = None
 
 
-def _write_secret_json_if_needed(path: str, value: str, label: str) -> None:
+def _write_secret_json_if_needed(path: str, value: str, label: str) -> bool:
+    global _GCAL_UNAVAILABLE_REASON
     if not value or os.path.exists(path):
-        return
-    directory = os.path.dirname(path)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(value.strip())
-    logger.info("Google Calendar %s materialized from environment.", label)
+        return True
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(value.strip())
+        logger.info("Google Calendar %s materialized from environment.", label)
+        return True
+    except OSError as e:
+        _GCAL_UNAVAILABLE_REASON = f"cannot write {label} to {path}: {e}"
+        logger.error("Google Calendar disabled: %s", _GCAL_UNAVAILABLE_REASON)
+        return False
 
 
-def _materialize_google_secrets() -> None:
-    _write_secret_json_if_needed(
+def _materialize_google_secrets() -> bool:
+    credentials_ok = _write_secret_json_if_needed(
         GOOGLE_CREDENTIALS_FILE,
         GOOGLE_CREDENTIALS_JSON,
         "credentials",
     )
-    _write_secret_json_if_needed(
+    token_ok = _write_secret_json_if_needed(
         GOOGLE_TOKEN_FILE,
         GOOGLE_TOKEN_JSON,
         "token",
     )
+    return credentials_ok and token_ok
 
 
 def _get_calendar_service():
@@ -46,7 +54,8 @@ def _get_calendar_service():
     if _GCAL_UNAVAILABLE_REASON:
         return None
 
-    _materialize_google_secrets()
+    if not _materialize_google_secrets():
+        return None
 
     if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
         _GCAL_UNAVAILABLE_REASON = f"credentials file not found: {GOOGLE_CREDENTIALS_FILE}"
@@ -98,7 +107,7 @@ def _get_calendar_service():
 
 
 def get_gcal_status(check_service: bool = False) -> dict:
-    _materialize_google_secrets()
+    materialized = _materialize_google_secrets()
     status = {
         "enabled": GOOGLE_CALENDAR_ENABLED,
         "calendar_id": GOOGLE_CALENDAR_ID,
@@ -113,6 +122,9 @@ def get_gcal_status(check_service: bool = False) -> dict:
 
     if not GOOGLE_CALENDAR_ENABLED:
         status["reason"] = "GOOGLE_CALENDAR_ENABLED=false"
+        return status
+    if not materialized:
+        status["reason"] = _GCAL_UNAVAILABLE_REASON or "failed to materialize Google secrets"
         return status
     if not status["credentials_exists"]:
         status["reason"] = f"missing credentials file: {GOOGLE_CREDENTIALS_FILE}"
