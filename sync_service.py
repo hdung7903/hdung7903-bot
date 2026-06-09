@@ -41,13 +41,16 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     logger.info("Sync result: total=%d, new=%d, changed=%d", total, len(new_events), len(changed_events))
 
     # 3. Đồng bộ Google Calendar
+    # Reconcile toàn bộ events mỗi lần sync để nếu trước đó GCal bị tắt/thiếu
+    # credentials thì sau khi bật lại vẫn đẩy được các lịch đã tồn tại trong DB.
     gcal_success = 0
-    if GOOGLE_CALENDAR_ENABLED and (new_events or changed_events):
-        gcal_success, _ = sync_all_events(new_events + changed_events)
+    gcal_failed = 0
+    if GOOGLE_CALENDAR_ENABLED:
+        gcal_success, gcal_failed = sync_all_events(events)
 
-    # 4. Gửi thông báo Telegram về sự kiện mới/thay đổi
+    # 4. Gửi thông báo Telegram về kết quả sync, kể cả khi không đổi
     if bot and notify_changes:
-        await _notify_changes(bot, new_events, changed_events)
+        await _notify_sync_result(bot, new_events, changed_events, total, gcal_success, gcal_failed)
 
     # 5. Log sync
     db.log_sync("ALL", total, len(new_events), len(changed_events), "ok")
@@ -57,6 +60,7 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
         "new": len(new_events),
         "changed": len(changed_events),
         "gcal_synced": gcal_success,
+        "gcal_failed": gcal_failed,
         "status": "ok",
     }
 
@@ -80,20 +84,24 @@ async def run_reminder_check(bot) -> int:
     return sent_count
 
 
-async def _notify_changes(bot, new_events: list, changed_events: list) -> None:
-    from notifier import build_new_event_message, build_changed_event_message
+async def _notify_sync_result(
+    bot,
+    new_events: list,
+    changed_events: list,
+    total: int,
+    gcal_success: int = 0,
+    gcal_failed: int = 0,
+) -> None:
+    from notifier import build_sync_notification
 
-    for event in new_events:
-        if not db.is_notification_sent(event["id"], "new"):
-            msg = build_new_event_message(event)
-            await _broadcast(bot, msg)
-            db.mark_notification_sent(event["id"], "new")
-
-    for event in changed_events:
-        if not db.is_notification_sent(event["id"], "changed"):
-            msg = build_changed_event_message(event)
-            await _broadcast(bot, msg)
-            db.mark_notification_sent(event["id"], "changed")
+    msg = build_sync_notification(
+        new_events,
+        changed_events,
+        total,
+        gcal_synced=gcal_success,
+        gcal_failed=gcal_failed,
+    )
+    await _broadcast(bot, msg)
 
 
 async def _broadcast(bot, message: str) -> bool:

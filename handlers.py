@@ -2,11 +2,18 @@
 handlers.py – Tất cả Telegram command handlers.
 """
 import logging
+import re
 from functools import wraps
 from datetime import datetime, timedelta
 
-from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import (
+    CallbackQueryHandler,
+    ContextTypes,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 import database as db
 from config import CLASS_IDS, TELEGRAM_OWNER_USERNAME, WC_ENABLED
@@ -19,6 +26,27 @@ logger = logging.getLogger(__name__)
 PRIVATE_BOT_MESSAGE = (
     "Bot này đang chạy ở chế độ cá nhân và không mở quyền sử dụng công khai."
 )
+
+QR_BANKS = {
+    "vcb": {
+        "name": "Vietcombank",
+        "code": "VCB",
+        "account": "1014937124",
+        "aliases": {"vietcombank", "vcb"},
+    },
+    "tech": {
+        "name": "Techcombank",
+        "code": "TCB",
+        "account": "19072571890013",
+        "aliases": {"techcombank", "tech", "tcb"},
+    },
+    "mb": {
+        "name": "MB Bank",
+        "code": "MB",
+        "account": "00134070903",
+        "aliases": {"mbbank", "mb"},
+    },
+}
 
 
 def _username(update: Update) -> str:
@@ -46,7 +74,9 @@ def _can_claim_owner(update: Update) -> bool:
 
 
 async def _deny(update: Update) -> None:
-    if update.message:
+    if update.callback_query:
+        await update.callback_query.answer(PRIVATE_BOT_MESSAGE, show_alert=True)
+    elif update.message:
         await update.message.reply_text(PRIVATE_BOT_MESSAGE)
 
 
@@ -117,6 +147,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/status – Xem trạng thái bot\n"
         "/dang_ky – Đăng ký nhận thông báo\n"
         "/huy – Hủy đăng ký thông báo\n"
+        "/qrbank – QR chuyển khoản ngân hàng\n"
         "/help – Trợ giúp"
         f"{wc_commands}\n\n"
         f"📚 Đang theo dõi lớp: <code>{', '.join(CLASS_IDS)}</code>"
@@ -223,6 +254,74 @@ async def cmd_huy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+def _find_qr_bank(raw: str) -> dict | None:
+    keys = [part for part in re.split(r"[\s,;/]+", raw.strip().lower().replace("@", "")) if part]
+    for bank in QR_BANKS.values():
+        if any(key in bank["aliases"] for key in keys):
+            return bank
+    return None
+
+
+def _qr_url(bank: dict) -> str:
+    return f"https://img.vietqr.io/image/{bank['code']}-{bank['account']}-compact2.png"
+
+
+async def _send_qr_bank(update: Update, bank: dict) -> None:
+    caption = (
+        f"🏦 <b>{bank['name']}</b>\n"
+        f"STK: <code>{bank['account']}</code>\n\n"
+        "Quét QR để chuyển khoản."
+    )
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_photo(
+            photo=_qr_url(bank),
+            caption=caption,
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_photo(
+            photo=_qr_url(bank),
+            caption=caption,
+            parse_mode="HTML",
+        )
+
+
+@owner_required
+async def cmd_qrbank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.args:
+        bank = _find_qr_bank(" ".join(context.args))
+        if bank:
+            await _send_qr_bank(update, bank)
+            return
+        await update.message.reply_text(
+            "Không tìm thấy ngân hàng. Dùng: /qrbank vcb, /qrbank tech hoặc /qrbank mb.",
+            parse_mode="HTML",
+        )
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("Vietcombank", callback_data="qrbank:vcb")],
+        [InlineKeyboardButton("Techcombank", callback_data="qrbank:tech")],
+        [InlineKeyboardButton("MB Bank", callback_data="qrbank:mb")],
+    ]
+    await update.message.reply_text(
+        "Chọn ngân hàng để lấy QR chuyển khoản:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+@owner_required
+async def cb_qrbank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = update.callback_query.data or ""
+    key = data.split(":", 1)[1] if ":" in data else ""
+    bank = QR_BANKS.get(key)
+    if not bank:
+        await update.callback_query.answer("Ngân hàng không hợp lệ.", show_alert=True)
+        return
+    await _send_qr_bank(update, bank)
+
+
 @owner_required
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -252,6 +351,8 @@ def register_handlers(application) -> None:
     application.add_handler(CommandHandler("status", cmd_status))
     application.add_handler(CommandHandler("dang_ky", cmd_dang_ky))
     application.add_handler(CommandHandler("huy", cmd_huy))
+    application.add_handler(CommandHandler("qrbank", cmd_qrbank))
+    application.add_handler(CallbackQueryHandler(cb_qrbank, pattern=r"^qrbank:"))
 
 
 def register_fallback_handlers(application) -> None:

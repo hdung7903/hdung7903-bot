@@ -104,6 +104,50 @@ def build_sync_report(new_count: int, changed_count: int, total: int) -> str:
     return "\n".join(parts)
 
 
+def build_sync_notification(
+    new_events: list[dict],
+    changed_events: list[dict],
+    total: int,
+    gcal_synced: int = 0,
+    gcal_failed: int = 0,
+) -> str:
+    new_count = len(new_events)
+    changed_count = len(changed_events)
+
+    if new_count == 0 and changed_count == 0:
+        parts = [
+            "✅ <b>Lịch học như cũ</b>",
+            f"Tổng hiện có: <b>{total}</b> buổi.",
+        ]
+    else:
+        parts = [
+            "🔄 <b>Lịch học vừa được cập nhật</b>",
+            f"📊 Tổng: <b>{total}</b> buổi",
+        ]
+        if new_count:
+            parts.append(f"🆕 Mới: <b>{new_count}</b> buổi")
+        if changed_count:
+            parts.append(f"✏️ Thay đổi: <b>{changed_count}</b> buổi")
+
+        preview_events = new_events[:5] + changed_events[:5]
+        if preview_events:
+            parts.append("\n<b>Chi tiết:</b>")
+            for event in preview_events[:10]:
+                marker = "🆕" if event in new_events else "✏️"
+                parts.append(f"\n{marker} {format_event(event)}")
+            remaining = new_count + changed_count - len(preview_events[:10])
+            if remaining > 0:
+                parts.append(f"\n... và <b>{remaining}</b> thay đổi khác.")
+
+    if gcal_synced or gcal_failed:
+        parts.append(
+            f"\n📅 Google Calendar: <b>{gcal_synced}</b> synced"
+            + (f", <b>{gcal_failed}</b> lỗi" if gcal_failed else "")
+        )
+
+    return "\n".join(parts)
+
+
 def get_events_needing_reminder() -> list[dict]:
     """Trả về events cần nhắc nhở (trong vòng ~24h tới, chưa gửi)."""
     now = datetime.now()

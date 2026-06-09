@@ -11,6 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Bot, BotCommand
 from telegram import Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import Application, ContextTypes
 
 import database as db
@@ -139,6 +140,7 @@ def _build_bot_commands() -> list[BotCommand]:
         BotCommand("status", "Xem trạng thái bot"),
         BotCommand("dang_ky", "Đăng ký nhận thông báo"),
         BotCommand("huy", "Hủy nhận thông báo"),
+        BotCommand("qrbank", "QR chuyển khoản ngân hàng"),
     ]
     if WC_ENABLED:
         commands.extend([
@@ -152,7 +154,7 @@ def _build_bot_commands() -> list[BotCommand]:
 async def _run_initial_sync(bot: Bot) -> None:
     try:
         from sync_service import run_sync
-        result = await run_sync(bot=bot, notify_changes=False)
+        result = await run_sync(bot=bot, notify_changes=True)
         logger.info("✅ Initial sync: %s", result)
     except Exception:
         logger.exception("Initial sync lỗi")
@@ -219,6 +221,10 @@ async def on_shutdown(application: Application) -> None:
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if isinstance(context.error, (NetworkError, TimedOut)):
+        logger.warning("Telegram network hiccup while polling: %s", context.error)
+        return
+
     logger.exception("Telegram handler error", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         try:

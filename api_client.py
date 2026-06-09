@@ -44,6 +44,26 @@ def _apply_default_times(session: str, start_override: str = None) -> tuple[str,
     return start, end_dt.strftime("%H:%M")
 
 
+def _extract_link(item: dict) -> str:
+    """Lấy link Teams/meeting từ API dù field bị đổi tên."""
+    preferred_keys = (
+        "link", "url", "meeting_url", "teams_url", "teams_link",
+        "join_url", "joinUrl", "onlineMeetingUrl",
+    )
+    for key in preferred_keys:
+        value = (item.get(key) or "").strip() if isinstance(item.get(key), str) else ""
+        if value.startswith(("http://", "https://")):
+            return value
+
+    for value in item.values():
+        if not isinstance(value, str):
+            continue
+        match = re.search(r'https?://[^\s<>"\']+', value)
+        if match:
+            return match.group(0).rstrip(".,);")
+    return ""
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Parser cho field "time"
 # ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +242,7 @@ def parse_schedule_response(class_id: str, data) -> list[dict]:
 
         subject  = (item.get("subject") or item.get("ten_mon") or "Không rõ môn").strip()
         teacher  = (item.get("teacher") or item.get("giang_vien") or "").strip()
-        link     = (item.get("link") or "").strip()
+        link     = _extract_link(item)
         duration = (item.get("duration") or "").strip()
         time_raw = (item.get("time") or item.get("thoi_gian") or "").strip()
 
