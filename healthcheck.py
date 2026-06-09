@@ -34,7 +34,7 @@ def main() -> None:
         fail(f"database unavailable: {e}")
 
     if GOOGLE_CALENDAR_ENABLED:
-        status = get_gcal_status(check_service=False)
+        status = get_gcal_status(check_service=True)
         if not status["available"]:
             fail(f"google calendar unavailable: {status['reason']}")
 

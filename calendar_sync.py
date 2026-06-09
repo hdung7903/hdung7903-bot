@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 _GCAL_SERVICE = None
 _GCAL_UNAVAILABLE_REASON = None
+_GCAL_CALENDAR_VALIDATED = False
 
 
 def _write_secret_json_if_needed(path: str, value: str, label: str) -> bool:
@@ -106,6 +107,24 @@ def _get_calendar_service():
         return None
 
 
+def _ensure_calendar_available(service) -> bool:
+    global _GCAL_CALENDAR_VALIDATED, _GCAL_UNAVAILABLE_REASON
+    if _GCAL_CALENDAR_VALIDATED:
+        return True
+    try:
+        service.calendars().get(calendarId=GOOGLE_CALENDAR_ID).execute()
+        _GCAL_CALENDAR_VALIDATED = True
+        return True
+    except Exception as e:
+        _GCAL_UNAVAILABLE_REASON = (
+            f"calendar id not found or not accessible: {GOOGLE_CALENDAR_ID}. "
+            "Use GOOGLE_CALENDAR_ID=primary for your main calendar, or use the real "
+            "calendar ID from Google Calendar settings."
+        )
+        logger.error("Google Calendar disabled: %s Original error: %s", _GCAL_UNAVAILABLE_REASON, e)
+        return False
+
+
 def get_gcal_status(check_service: bool = False) -> dict:
     materialized = _materialize_google_secrets()
     status = {
@@ -135,8 +154,9 @@ def get_gcal_status(check_service: bool = False) -> dict:
 
     if check_service:
         service = _get_calendar_service()
-        status["available"] = service is not None
-        status["reason"] = _GCAL_UNAVAILABLE_REASON or ("ok" if service else "service unavailable")
+        calendar_ok = bool(service and _ensure_calendar_available(service))
+        status["available"] = calendar_ok
+        status["reason"] = _GCAL_UNAVAILABLE_REASON or ("ok" if calendar_ok else "service unavailable")
     else:
         status["available"] = True
         status["reason"] = "looks configured"
@@ -214,13 +234,13 @@ def _find_existing_gcal_event(service, bot_event_id: str) -> str | None:
         return None
 
 
-def sync_event_to_gcal(event: dict) -> bool:
+def sync_event_to_gcal(event: dict, service=None) -> bool:
     if not GOOGLE_CALENDAR_ENABLED:
         return False
     if not event.get("date"):
         return False  # Bỏ qua event không có ngày
 
-    service = _get_calendar_service()
+    service = service or _get_calendar_service()
     if not service:
         return False
 
@@ -252,11 +272,14 @@ def sync_event_to_gcal(event: dict) -> bool:
 def sync_all_events(events: list[dict]) -> tuple[int, int]:
     if not GOOGLE_CALENDAR_ENABLED:
         return 0, 0
-    if not _get_calendar_service():
+    service = _get_calendar_service()
+    if not service:
         return 0, 0
+    if not _ensure_calendar_available(service):
+        return 0, len(events)
     success, fail = 0, 0
     for event in events:
-        if sync_event_to_gcal(event):
+        if sync_event_to_gcal(event, service=service):
             success += 1
         else:
             fail += 1

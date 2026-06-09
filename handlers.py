@@ -245,7 +245,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_gcal_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from calendar_sync import get_gcal_status
 
-    status = get_gcal_status(check_service=False)
+    status = get_gcal_status(check_service=True)
     enabled = "bật" if status["enabled"] else "tắt"
     credentials = "có" if status["credentials_exists"] else "thiếu"
     token = "có" if status["token_exists"] else "thiếu"
