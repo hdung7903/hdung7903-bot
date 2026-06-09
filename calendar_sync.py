@@ -287,6 +287,9 @@ def sync_all_events(events: list[dict]) -> tuple[int, int]:
         return 0, len(events)
     success, fail = 0, 0
     for event in events:
+        if not event.get("date"):
+            logger.info("Skipped GCal event without parsed date: %s (%s)", event["id"], event.get("time_raw", ""))
+            continue
         if sync_event_to_gcal(event, service=service):
             success += 1
         else:

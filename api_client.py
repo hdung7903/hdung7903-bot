@@ -112,6 +112,27 @@ def _parse_approx_date(text: str) -> Optional[str]:
     return None
 
 
+def _parse_approx_dates(text: str) -> list[str]:
+    """
+    Xử lý ngày dự kiến dạng 'Tháng 10/2026' hoặc 'Tháng 10,11 /2026'.
+    Trả về danh sách ngày đầu tháng dạng YYYY-MM-DD.
+    """
+    m = re.search(r't[hh]áng\s+(\d{1,2}(?:\s*,\s*\d{1,2})*)\s*/\s*(\d{4})', text, re.IGNORECASE)
+    if not m:
+        approx_date = _parse_approx_date(text)
+        return [approx_date] if approx_date else []
+
+    year = int(m.group(2))
+    dates: list[str] = []
+    for raw_month in m.group(1).split(","):
+        try:
+            month = int(raw_month.strip())
+            dates.append(datetime(year, month, 1).strftime("%Y-%m-%d"))
+        except ValueError:
+            logger.warning("Invalid approximate month in time field: %r", text)
+    return dates
+
+
 def _parse_date_range(text: str) -> Optional[list[str]]:
     """
     Xử lý khoảng thời gian dạng '30/11 đến 02/01/2027'.
@@ -182,7 +203,7 @@ def parse_time_field(time_str: str) -> list[dict]:
     # ── 2. Ngày cụ thể: "22,23/05/2026" hay "08/05/2026" ────────────────────
     # Pattern: số ngày (có thể nhiều, cách nhau dấu phẩy) / tháng / năm
     month_year_match = re.search(
-        r'(\d{1,2}(?:\s*,\s*\d{1,2})*)\s*/\s*(\d{1,2})\s*/?\s*(\d{4})',
+        r'(\d{1,2}(?:\s*,\s*\d{1,2})*)\s*,?\s*/\s*(\d{1,2})\s*/?\s*(\d{4})',
         time_str
     )
     if month_year_match:
@@ -206,15 +227,16 @@ def parse_time_field(time_str: str) -> list[dict]:
         return results
 
     # ── 3. Ngày dự kiến: "Tháng 10/2026", "DK: tháng 10/2026" ──────────────
-    approx_date = _parse_approx_date(time_str)
-    if approx_date:
-        for session in sessions:
-            results.append({
-                "session": session,
-                "date": approx_date,
-                "is_approximate": True,
-                "date_range_end": None,
-            })
+    approx_dates = _parse_approx_dates(time_str)
+    if approx_dates:
+        for approx_date in approx_dates:
+            for session in sessions:
+                results.append({
+                    "session": session,
+                    "date": approx_date,
+                    "is_approximate": True,
+                    "date_range_end": None,
+                })
         return results
 
     logger.warning("Could not parse time field: %r", time_str)
