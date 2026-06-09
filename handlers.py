@@ -294,28 +294,102 @@ def _find_qr_bank(raw: str) -> dict | None:
     return None
 
 
-def _qr_url(bank: dict) -> str:
-    return f"https://img.vietqr.io/image/{bank['code']}-{bank['account']}-compact2.png"
+def _find_qr_bank_key(bank: dict) -> str:
+    for key, item in QR_BANKS.items():
+        if item is bank:
+            return key
+    return ""
 
 
-async def _send_qr_bank(update: Update, bank: dict) -> None:
+def _parse_qr_amount(raw: str) -> int | None:
+    normalized = (raw or "").strip().lower()
+    unit_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngan|tr|triệu|trieu)", normalized)
+    if unit_match:
+        number = float(unit_match.group(1).replace(",", "."))
+        unit = unit_match.group(2)
+        multiplier = 1_000_000 if unit in {"tr", "triệu", "trieu"} else 1_000
+        amount = int(number * multiplier)
+        return amount if amount >= 2000 else None
+
+    cleaned = re.sub(r"[^\d]", "", normalized)
+    if not cleaned:
+        return None
+    amount = int(cleaned)
+    return amount if amount >= 2000 else None
+
+
+def _extract_qr_amount(args: list[str]) -> int | None:
+    for arg in args:
+        amount = _parse_qr_amount(arg)
+        if amount is not None:
+            return amount
+    return None
+
+
+def _has_amount_arg(args: list[str]) -> bool:
+    return any(re.search(r"\d", arg or "") for arg in args)
+
+
+def _format_vnd(amount: int) -> str:
+    return f"{amount:,}".replace(",", ".") + "đ"
+
+
+def _qr_url(bank: dict, amount: int | None = None) -> str:
+    url = f"https://img.vietqr.io/image/{bank['code']}-{bank['account']}-compact2.png"
+    if amount is not None:
+        url += f"?amount={amount}"
+    return url
+
+
+async def _send_qr_bank(update: Update, bank: dict, amount: int | None = None) -> None:
+    amount_line = (
+        f"Số tiền: <b>{_format_vnd(amount)}</b>"
+        if amount is not None
+        else "Số tiền: tự nhập khi chuyển khoản"
+    )
     caption = (
         f"🏦 <b>{bank['name']}</b>\n"
-        f"STK: <code>{bank['account']}</code>\n\n"
+        f"STK: <code>{bank['account']}</code>\n"
+        f"{amount_line}\n\n"
         "Quét QR để chuyển khoản."
     )
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.message.reply_photo(
-            photo=_qr_url(bank),
+            photo=_qr_url(bank, amount),
             caption=caption,
             parse_mode="HTML",
         )
     else:
         await update.message.reply_photo(
-            photo=_qr_url(bank),
+            photo=_qr_url(bank, amount),
             caption=caption,
             parse_mode="HTML",
+        )
+
+
+async def _show_qr_amount_options(update: Update, bank: dict) -> None:
+    key = _find_qr_bank_key(bank)
+    keyboard = [
+        [InlineKeyboardButton("Nhập số tiền", callback_data=f"qrbank:amount:{key}")],
+        [InlineKeyboardButton("Lấy QR không số tiền", callback_data=f"qrbank:noamount:{key}")],
+    ]
+    text = (
+        f"Đã chọn <b>{bank['name']}</b>.\n"
+        "Bạn muốn tạo QR với số tiền cụ thể hay lấy QR để tự nhập số tiền?"
+    )
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
 
@@ -324,18 +398,26 @@ async def cmd_qrbank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if context.args:
         bank = _find_qr_bank(" ".join(context.args))
         if bank:
-            await _send_qr_bank(update, bank)
+            amount = _extract_qr_amount(context.args)
+            if amount is not None:
+                await _send_qr_bank(update, bank, amount)
+            elif _has_amount_arg(context.args):
+                await update.message.reply_text(
+                    "Số tiền không hợp lệ. Số tiền chuyển khoản tối thiểu là 2.000đ.",
+                )
+            else:
+                await _show_qr_amount_options(update, bank)
             return
         await update.message.reply_text(
-            "Không tìm thấy ngân hàng. Dùng: /qrbank vcb, /qrbank tech hoặc /qrbank mb.",
+            "Không tìm thấy ngân hàng. Dùng: /qrbank vcb, /qrbank tech hoặc /qrbank mb. Có thể thêm số tiền, ví dụ /qrbank vcb 50000.",
             parse_mode="HTML",
         )
         return
 
     keyboard = [
-        [InlineKeyboardButton("Vietcombank", callback_data="qrbank:vcb")],
-        [InlineKeyboardButton("Techcombank", callback_data="qrbank:tech")],
-        [InlineKeyboardButton("MB Bank", callback_data="qrbank:mb")],
+        [InlineKeyboardButton("Vietcombank", callback_data="qrbank:select:vcb")],
+        [InlineKeyboardButton("Techcombank", callback_data="qrbank:select:tech")],
+        [InlineKeyboardButton("MB Bank", callback_data="qrbank:select:mb")],
     ]
     await update.message.reply_text(
         "Chọn ngân hàng để lấy QR chuyển khoản:",
@@ -346,12 +428,50 @@ async def cmd_qrbank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 @owner_required
 async def cb_qrbank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = update.callback_query.data or ""
-    key = data.split(":", 1)[1] if ":" in data else ""
+    parts = data.split(":")
+    action = parts[1] if len(parts) >= 3 else "select"
+    key = parts[2] if len(parts) >= 3 else (parts[1] if len(parts) >= 2 else "")
     bank = QR_BANKS.get(key)
     if not bank:
         await update.callback_query.answer("Ngân hàng không hợp lệ.", show_alert=True)
         return
-    await _send_qr_bank(update, bank)
+
+    if action == "amount":
+        context.user_data["qrbank_pending_bank"] = key
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(
+            "Nhập số tiền cần chuyển khoản, tối thiểu 2.000đ. Ví dụ: 50000",
+        )
+        return
+
+    if action == "noamount":
+        context.user_data.pop("qrbank_pending_bank", None)
+        await _send_qr_bank(update, bank)
+        return
+
+    await _show_qr_amount_options(update, bank)
+
+
+async def _handle_pending_qr_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    key = context.user_data.get("qrbank_pending_bank")
+    if not key:
+        return False
+
+    bank = QR_BANKS.get(key)
+    amount = _parse_qr_amount(update.message.text or "")
+    if not bank:
+        context.user_data.pop("qrbank_pending_bank", None)
+        await update.message.reply_text("Phiên tạo QR đã hết hạn. Dùng lại /qrbank.")
+        return True
+    if amount is None:
+        await update.message.reply_text(
+            "Số tiền không hợp lệ. Nhập số từ 2.000đ trở lên, hoặc dùng /qrbank để chọn lại."
+        )
+        return True
+
+    context.user_data.pop("qrbank_pending_bank", None)
+    await _send_qr_bank(update, bank, amount)
+    return True
 
 
 @owner_required
@@ -364,6 +484,8 @@ async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 @owner_required
 async def cmd_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if await _handle_pending_qr_amount(update, context):
+        return
     await update.message.reply_text(
         "Mình đã nhận tin nhắn. Dùng /help để xem các lệnh đang hỗ trợ.",
         parse_mode="HTML",

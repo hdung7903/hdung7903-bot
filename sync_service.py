@@ -2,6 +2,7 @@
 sync_service.py – Orchestrate: fetch API → save DB → sync GCal → notify Telegram.
 """
 import logging
+import asyncio
 from datetime import datetime
 
 import database as db
@@ -46,7 +47,7 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     gcal_success = 0
     gcal_failed = 0
     if GOOGLE_CALENDAR_ENABLED:
-        gcal_success, gcal_failed = sync_all_events(events)
+        gcal_success, gcal_failed = await asyncio.to_thread(sync_all_events, events)
 
     # 4. Gửi thông báo Telegram về kết quả sync, kể cả khi không đổi
     if bot and notify_changes:
