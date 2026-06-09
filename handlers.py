@@ -2,9 +2,10 @@
 handlers.py – Tất cả Telegram command handlers.
 """
 import logging
+import asyncio
 import re
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -22,6 +23,7 @@ from notifier import build_schedule_message, build_sync_report
 logger = logging.getLogger(__name__)
 
 MAX_TELEGRAM_MESSAGE = 3900
+HANDLER_TIMEOUT_SECONDS = 25
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -95,9 +97,37 @@ def owner_required(func):
             await _deny(update)
             return
         _register_user(update, is_owner=True)
-        return await func(update, context)
+        await _notify_if_update_was_delayed(update, context)
+        try:
+            return await asyncio.wait_for(
+                func(update, context),
+                timeout=HANDLER_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.exception("Command timed out: %s", update.effective_message.text if update.effective_message else "-")
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "Bot đang xử lý quá lâu hoặc service bên ngoài phản hồi chậm. Thử lại sau vài giây."
+                )
 
     return wrapper
+
+
+async def _notify_if_update_was_delayed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    started_at = context.application.bot_data.get("started_at")
+    if not message or not started_at or context.user_data.get("delayed_update_notified"):
+        return
+
+    message_date = message.date
+    if message_date.tzinfo is None:
+        message_date = message_date.replace(tzinfo=timezone.utc)
+
+    if message_date < started_at - timedelta(seconds=5):
+        context.user_data["delayed_update_notified"] = True
+        await message.reply_text(
+            "Bot vừa khởi động lại sau deploy/offline nên phản hồi hơi trễ. Mình đang xử lý lệnh của bạn ngay bây giờ."
+        )
 
 
 async def _reply_html_chunks(update: Update, text: str) -> None:
@@ -134,6 +164,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     _register_user(update, is_owner=True)
+    await _notify_if_update_was_delayed(update, context)
 
     name = update.effective_user.first_name or "bạn"
     wc_commands = ""

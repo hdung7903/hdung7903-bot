@@ -253,11 +253,17 @@ def main() -> None:
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
+        .connect_timeout(10)
+        .read_timeout(20)
+        .write_timeout(20)
+        .pool_timeout(10)
+        .concurrent_updates(8)
         .post_init(on_startup)
         .post_shutdown(on_shutdown)
         .build()
     )
     application.bot_data["scheduler"] = scheduler
+    application.bot_data["started_at"] = datetime.now(timezone.utc)
 
     register_handlers(application)
     if WC_ENABLED:
@@ -273,7 +279,7 @@ def main() -> None:
     logger.info("▶️  Bot bắt đầu polling...")
     application.run_polling(
         allowed_updates=["message", "callback_query"],
-        drop_pending_updates=True,
+        drop_pending_updates=False,
     )
 
 
