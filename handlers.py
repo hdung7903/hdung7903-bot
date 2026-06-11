@@ -195,6 +195,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/dang_ky – Đăng ký nhận thông báo\n"
         "/huy – Hủy đăng ký thông báo\n"
         "/qrbank – QR chuyển khoản ngân hàng\n"
+        "/qrzalo – QR kết bạn Zalo\n"
+        "/qrfacebook – QR Facebook profile\n"
+        "/qrgithub – QR GitHub profile\n"
         "/help – Trợ giúp"
         f"{wc_commands}\n\n"
         f"📚 Đang theo dõi lớp: <code>{', '.join(CLASS_IDS)}</code>"
@@ -517,6 +520,59 @@ async def _handle_pending_qr_amount(update: Update, context: ContextTypes.DEFAUL
 
 
 @owner_required
+async def cmd_qrzalo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    phone = "0395081725"
+    caption = (
+        "📱 <b>Kết bạn Zalo</b>\n\n"
+        f"SĐT: <code>{phone}</code>\n\n"
+        "Quét QR hoặc tìm bằng số điện thoại để kết bạn Zalo."
+    )
+    # Zalo QR code URL - using a QR generator for the phone number
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={phone}"
+    await update.message.reply_photo(
+        photo=qr_url,
+        caption=caption,
+        parse_mode="HTML",
+    )
+
+
+@owner_required
+async def cmd_qrfacebook(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    fb_url = "https://www.facebook.com/hdung7903"
+    caption = (
+        "📘 <b>Facebook Profile</b>\n\n"
+        "Quét QR hoặc nhấn link để truy cập Facebook."
+    )
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={fb_url}"
+    await update.message.reply_photo(
+        photo=qr_url,
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Mở Facebook", url=fb_url)]
+        ]),
+    )
+
+
+@owner_required
+async def cmd_qrgithub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    gh_url = "https://github.com/hdung7903"
+    caption = (
+        "💻 <b>GitHub Profile</b>\n\n"
+        "Quét QR hoặc nhấn link để truy cập GitHub."
+    )
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={gh_url}"
+    await update.message.reply_photo(
+        photo=qr_url,
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Mở GitHub", url=gh_url)]
+        ]),
+    )
+
+
+@owner_required
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "❓ Lệnh không hợp lệ. Dùng /help để xem danh sách lệnh.",
@@ -549,6 +605,9 @@ def register_handlers(application) -> None:
     application.add_handler(CommandHandler("dang_ky", cmd_dang_ky))
     application.add_handler(CommandHandler("huy", cmd_huy))
     application.add_handler(CommandHandler("qrbank", cmd_qrbank))
+    application.add_handler(CommandHandler("qrzalo", cmd_qrzalo))
+    application.add_handler(CommandHandler("qrfacebook", cmd_qrfacebook))
+    application.add_handler(CommandHandler("qrgithub", cmd_qrgithub))
     application.add_handler(CallbackQueryHandler(cb_qrbank, pattern=r"^qrbank:"))
 
 
