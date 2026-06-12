@@ -106,14 +106,14 @@ async def _wc_today(update: Update) -> None:
     today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
     loading = await update.message.reply_text("⏳ Đang lấy lịch trận...", parse_mode="HTML")
 
-    # Thử lấy từ DB trước (cache)
-    matches = wc_db.get_matches_by_date(today)
+    # Luôn fetch fresh từ API để có goals/cards đầy đủ cho trận đã kết thúc
+    matches = await fetch_today_matches()
+    for m in matches:
+        wc_db.upsert_match(m)
 
-    # Nếu DB rỗng hoặc API key có, fetch live
+    # Fallback về DB nếu API fail
     if not matches:
-        matches = await fetch_today_matches()
-        for m in matches:
-            wc_db.upsert_match(m)
+        matches = wc_db.get_matches_by_date(today)
 
     msg = build_daily_wc_message(matches, today)
     try:
@@ -125,11 +125,15 @@ async def _wc_today(update: Update) -> None:
 
 async def _wc_by_date(update: Update, date_str: str) -> None:
     loading = await update.message.reply_text("⏳ Đang tìm...", parse_mode="HTML")
-    matches = wc_db.get_matches_by_date(date_str)
+
+    # Luôn fetch fresh từ API để có goals/cards đầy đủ cho trận đã kết thúc
+    matches = await fetch_matches_by_date(date_str)
+    for m in matches:
+        wc_db.upsert_match(m)
+
+    # Fallback về DB nếu API fail
     if not matches:
-        matches = await fetch_matches_by_date(date_str)
-        for m in matches:
-            wc_db.upsert_match(m)
+        matches = wc_db.get_matches_by_date(date_str)
 
     msg = build_daily_wc_message(matches, date_str)
     try:

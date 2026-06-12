@@ -289,7 +289,8 @@ def build_daily_wc_message(matches: list[dict], vn_date: str) -> str:
         if status in ("FINISHED", "LIVE", "IN_PLAY", "PAUSED") and m.get("home_score") is not None:
             hs, as_ = m["home_score"], m["away_score"]
             lines.append(f"<b>{home_lbl}  {hs} – {as_}  {away_lbl}</b>")
-            # Người ghi bàn (nếu đã kết thúc)
+
+            # Người ghi bàn
             if m.get("goals"):
                 h_sc = _goals_by_team(m["goals"], home)
                 a_sc = _goals_by_team(m["goals"], away)
@@ -297,6 +298,25 @@ def build_daily_wc_message(matches: list[dict], vn_date: str) -> str:
                     lines.append(f"  ⚽ {team_vn_name(home)}: {h_sc}")
                 if a_sc:
                     lines.append(f"  ⚽ {team_vn_name(away)}: {a_sc}")
+
+            # Thẻ vàng
+            if m.get("yellow_cards"):
+                h_y = _cards_by_team(m["yellow_cards"], home)
+                a_y = _cards_by_team(m["yellow_cards"], away)
+                if h_y:
+                    lines.append(f"  🟨 {team_vn_name(home)}: {h_y}")
+                if a_y:
+                    lines.append(f"  🟨 {team_vn_name(away)}: {a_y}")
+
+            # Thẻ đỏ
+            if m.get("red_cards"):
+                h_r = _cards_by_team(m["red_cards"], home)
+                a_r = _cards_by_team(m["red_cards"], away)
+                if h_r:
+                    lines.append(f"  🟥 {team_vn_name(home)}: {h_r}")
+                if a_r:
+                    lines.append(f"  🟥 {team_vn_name(away)}: {a_r}")
+
             lines.append(f"  {status_lbl} | {stage}{grp_label} | {time_str} (VN)")
         else:
             lines.append(f"<b>{home_lbl}  vs  {away_lbl}</b>")
