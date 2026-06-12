@@ -34,6 +34,8 @@ def init_wc_tables() -> None:
                 ht_away         INTEGER,
                 winner          TEXT,
                 goals_json      TEXT,
+                yellow_cards_json TEXT,
+                red_cards_json  TEXT,
                 notified_result INTEGER DEFAULT 0,
                 updated_at      TEXT DEFAULT (datetime('now'))
             );
@@ -45,6 +47,15 @@ def init_wc_tables() -> None:
                 PRIMARY KEY (match_id, notif_type)
             );
         """)
+        # Migration: thêm cột mới nếu chưa có (cho DB cũ)
+        for col, col_type in [
+            ("yellow_cards_json", "TEXT"),
+            ("red_cards_json",    "TEXT"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE wc_matches ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass  # cột đã tồn tại
     logger.debug("WC tables initialized.")
 
 
@@ -59,15 +70,18 @@ def upsert_match(match: dict) -> tuple[bool, bool]:
         ).fetchone()
 
         now = datetime.now().isoformat()
-        goals_json = json.dumps(match.get("goals", []), ensure_ascii=False)
+        goals_json        = json.dumps(match.get("goals", []),        ensure_ascii=False)
+        yellow_cards_json = json.dumps(match.get("yellow_cards", []), ensure_ascii=False)
+        red_cards_json    = json.dumps(match.get("red_cards", []),    ensure_ascii=False)
 
         if existing is None:
             conn.execute(
                 """INSERT INTO wc_matches
                    (id, utc_date, vn_date, vn_time, status, stage, grp, matchday,
                     home_team, home_team_tla, away_team, away_team_tla,
-                    home_score, away_score, ht_home, ht_away, winner, goals_json, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    home_score, away_score, ht_home, ht_away, winner,
+                    goals_json, yellow_cards_json, red_cards_json, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     mid, match["utc_date"], match["vn_date"], match["vn_time"],
                     match["status"], match["stage"], match["group"], match["matchday"],
@@ -75,7 +89,7 @@ def upsert_match(match: dict) -> tuple[bool, bool]:
                     match["away_team"], match["away_team_tla"],
                     match["home_score"], match["away_score"],
                     match["ht_home"], match["ht_away"],
-                    match["winner"], goals_json, now,
+                    match["winner"], goals_json, yellow_cards_json, red_cards_json, now,
                 ),
             )
             return True, False
@@ -98,12 +112,12 @@ def upsert_match(match: dict) -> tuple[bool, bool]:
             conn.execute(
                 """UPDATE wc_matches SET
                    status=?, home_score=?, away_score=?, ht_home=?, ht_away=?,
-                   winner=?, goals_json=?, updated_at=?
+                   winner=?, goals_json=?, yellow_cards_json=?, red_cards_json=?, updated_at=?
                    WHERE id=?""",
                 (
                     new_status, new_home, new_away,
                     match["ht_home"], match["ht_away"],
-                    match["winner"], goals_json, now,
+                    match["winner"], goals_json, yellow_cards_json, red_cards_json, now,
                     mid,
                 ),
             )
@@ -164,4 +178,12 @@ def _row_to_dict(row) -> dict:
         d["goals"] = json.loads(d.get("goals_json") or "[]")
     except Exception:
         d["goals"] = []
+    try:
+        d["yellow_cards"] = json.loads(d.get("yellow_cards_json") or "[]")
+    except Exception:
+        d["yellow_cards"] = []
+    try:
+        d["red_cards"] = json.loads(d.get("red_cards_json") or "[]")
+    except Exception:
+        d["red_cards"] = []
     return d

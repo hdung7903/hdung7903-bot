@@ -89,13 +89,47 @@ async def job_wc_daily_notify(bot: Bot) -> None:
 
 
 async def job_wc_result_check(bot: Bot) -> None:
-    """Kiểm tra & thông báo kết quả trận vừa kết thúc (chạy mỗi N phút)."""
+    """Kiểm tra & thông báo kết quả trận vừa kết thúc (chạy mỗi N phút).
+    
+    Smart check: chỉ fetch API nếu hôm nay có trận đang diễn ra hoặc
+    sắp diễn ra trong vòng 3 giờ tới, để tiết kiệm API calls.
+    """
     vn_today = datetime.now(VN_TZ).date()
     if not (WC_START_DATE <= vn_today <= WC_END_DATE):
         return
 
     from wc_client import fetch_today_matches
     from wc_notifier import build_result_message
+
+    # Kiểm tra nhanh từ DB: hôm nay có trận nào chưa kết thúc không?
+    vn_date_str = vn_today.strftime("%Y-%m-%d")
+    cached = wc_db.get_matches_by_date(vn_date_str)
+    now_vn = datetime.now(VN_TZ)
+
+    has_active = False
+    for m in cached:
+        status = m.get("status", "")
+        # Đang live
+        if status in ("LIVE", "IN_PLAY", "PAUSED"):
+            has_active = True
+            break
+        # Chưa đấu và sắp bắt đầu trong 3h tới
+        if status == "SCHEDULED":
+            vn_time_str = m.get("vn_time")
+            if vn_time_str:
+                try:
+                    match_dt = datetime.strptime(f"{vn_date_str} {vn_time_str}", "%Y-%m-%d %H:%M")
+                    match_dt = match_dt.replace(tzinfo=VN_TZ)
+                    delta_minutes = (match_dt - now_vn).total_seconds() / 60
+                    if -30 <= delta_minutes <= 180:  # Từ 30 phút trước đến 3h sau giờ KO
+                        has_active = True
+                        break
+                except Exception:
+                    has_active = True  # Không parse được → cứ check
+
+    if not has_active and cached:
+        # Tất cả trận hôm nay đã kết thúc hoặc chưa đến giờ → skip
+        return
 
     matches = await fetch_today_matches()
 

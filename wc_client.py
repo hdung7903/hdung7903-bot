@@ -234,41 +234,57 @@ def _normalize_match(raw: dict) -> dict:
     status = STATUS_MAP.get(status_name, "LIVE" if status_type.get("state") == "in" else "SCHEDULED")
 
     goals = []
-    for g in comp.get("details") or []:
-        if "goal" not in (g.get("type", {}).get("text", "") or "").lower():
-            continue
-        athletes = g.get("athletes") or []
-        team = g.get("team") or {}
-        goals.append({
-            "minute": g.get("clock", {}).get("displayValue") or g.get("displayTime") or "?",
-            "team": _team_name(team),
-            "scorer": (athletes[0] if athletes else {}).get("displayName", ""),
-            "type": "OWN_GOAL" if g.get("ownGoal") else ("PENALTY" if g.get("penaltyKick") else "NORMAL"),
-        })
+    yellow_cards = []
+    red_cards = []
+
+    for detail in comp.get("details") or []:
+        type_text = (detail.get("type", {}).get("text", "") or "").lower()
+        athletes  = detail.get("athletes") or []
+        team      = detail.get("team") or {}
+        player    = (athletes[0] if athletes else {}).get("displayName", "")
+        minute    = detail.get("clock", {}).get("displayValue") or detail.get("displayTime") or "?"
+        team_name_val = _team_name(team)
+
+        if "goal" in type_text:
+            goals.append({
+                "minute":  minute,
+                "team":    team_name_val,
+                "scorer":  player,
+                "type":    "OWN_GOAL" if detail.get("ownGoal") else ("PENALTY" if detail.get("penaltyKick") else "NORMAL"),
+            })
+        elif "yellow-red" in type_text or "second yellow" in type_text:
+            # Thẻ vàng thứ 2 → thực chất là thẻ đỏ
+            red_cards.append({"minute": minute, "team": team_name_val, "player": player, "type": "SECOND_YELLOW"})
+        elif "yellow" in type_text:
+            yellow_cards.append({"minute": minute, "team": team_name_val, "player": player})
+        elif "red" in type_text:
+            red_cards.append({"minute": minute, "team": team_name_val, "player": player, "type": "DIRECT_RED"})
 
     home_score = _score(home.get("score"))
     away_score = _score(away.get("score"))
 
     return {
-        "id":           int(raw.get("id") or comp.get("id") or 0),
-        "utc_date":     utc_str,
-        "vn_date":      vn_dt.strftime("%Y-%m-%d") if vn_dt else None,
-        "vn_time":      vn_dt.strftime("%H:%M") if vn_dt else None,
-        "vn_datetime":  vn_dt,
-        "status":       status,
-        "stage":        _stage(raw),
-        "group":        _group_label(raw),
-        "matchday":     raw.get("season", {}).get("type"),
-        "home_team":    _team_name(home_team),
+        "id":            int(raw.get("id") or comp.get("id") or 0),
+        "utc_date":      utc_str,
+        "vn_date":       vn_dt.strftime("%Y-%m-%d") if vn_dt else None,
+        "vn_time":       vn_dt.strftime("%H:%M") if vn_dt else None,
+        "vn_datetime":   vn_dt,
+        "status":        status,
+        "stage":         _stage(raw),
+        "group":         _group_label(raw),
+        "matchday":      raw.get("season", {}).get("type"),
+        "home_team":     _team_name(home_team),
         "home_team_tla": home_team.get("abbreviation", ""),
-        "away_team":    _team_name(away_team),
+        "away_team":     _team_name(away_team),
         "away_team_tla": away_team.get("abbreviation", ""),
-        "home_score":   home_score,
-        "away_score":   away_score,
-        "ht_home":      None,
-        "ht_away":      None,
-        "winner":       _winner(home, away, status),
-        "goals":        goals,
+        "home_score":    home_score,
+        "away_score":    away_score,
+        "ht_home":       None,
+        "ht_away":       None,
+        "winner":        _winner(home, away, status),
+        "goals":         goals,
+        "yellow_cards":  yellow_cards,
+        "red_cards":     red_cards,
     }
 
 

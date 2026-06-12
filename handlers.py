@@ -212,17 +212,25 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 @owner_required
 async def cmd_lich(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("⏳ Đang lấy lịch học...", parse_mode="HTML")
+    loading = await update.message.reply_text("⏳ Đang lấy lịch học...", parse_mode="HTML")
     events = db.get_upcoming_events(days=7)
     msg = build_schedule_message(events, "📅 Lịch học 7 ngày tới")
+    try:
+        await loading.delete()
+    except Exception:
+        pass
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_required
 async def cmd_lich_thang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("⏳ Đang lấy lịch học...", parse_mode="HTML")
+    loading = await update.message.reply_text("⏳ Đang lấy lịch học...", parse_mode="HTML")
     events = db.get_upcoming_events(days=31)
     msg = build_schedule_message(events, "📅 Lịch học tháng này")
+    try:
+        await loading.delete()
+    except Exception:
+        pass
     await _reply_html_chunks(update, msg)
 
 
@@ -244,10 +252,14 @@ async def cmd_ngay_mai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 @owner_required
 async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("🔄 Đang đồng bộ lịch học...", parse_mode="HTML")
+    loading = await update.message.reply_text("🔄 Đang đồng bộ lịch học...", parse_mode="HTML")
     from sync_service import run_sync
     result = await run_sync(bot=context.bot, notify_changes=False)
     msg = build_sync_report(result["new"], result["changed"], result["total"])
+    try:
+        await loading.delete()
+    except Exception:
+        pass
     await update.message.reply_text(msg, parse_mode="HTML")
 
 

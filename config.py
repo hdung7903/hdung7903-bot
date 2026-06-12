@@ -99,4 +99,5 @@ WC_END_DATE         = date(2026, 7, 19)
 # Gửi thông báo lịch WC hàng ngày lúc mấy giờ (giờ VN)
 WC_DAILY_NOTIFY_HOUR = int(os.getenv("WC_DAILY_NOTIFY_HOUR", "0"))
 # Kiểm tra kết quả live bao nhiêu phút 1 lần trong ngày có trận (0 = tắt)
-WC_LIVE_CHECK_MINUTES = int(os.getenv("WC_LIVE_CHECK_MINUTES", "60"))
+# Mặc định 3 phút để thông báo kết quả nhanh sau khi trận kết thúc
+WC_LIVE_CHECK_MINUTES = int(os.getenv("WC_LIVE_CHECK_MINUTES", "3"))

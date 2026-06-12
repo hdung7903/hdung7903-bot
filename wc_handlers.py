@@ -104,7 +104,7 @@ async def cmd_wc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _wc_today(update: Update) -> None:
     today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
-    await update.message.reply_text("⏳ Đang lấy lịch trận...", parse_mode="HTML")
+    loading = await update.message.reply_text("⏳ Đang lấy lịch trận...", parse_mode="HTML")
 
     # Thử lấy từ DB trước (cache)
     matches = wc_db.get_matches_by_date(today)
@@ -116,11 +116,15 @@ async def _wc_today(update: Update) -> None:
             wc_db.upsert_match(m)
 
     msg = build_daily_wc_message(matches, today)
+    try:
+        await loading.delete()
+    except Exception:
+        pass
     await _send_long(update, msg)
 
 
 async def _wc_by_date(update: Update, date_str: str) -> None:
-    await update.message.reply_text("⏳ Đang tìm...", parse_mode="HTML")
+    loading = await update.message.reply_text("⏳ Đang tìm...", parse_mode="HTML")
     matches = wc_db.get_matches_by_date(date_str)
     if not matches:
         matches = await fetch_matches_by_date(date_str)
@@ -128,12 +132,20 @@ async def _wc_by_date(update: Update, date_str: str) -> None:
             wc_db.upsert_match(m)
 
     msg = build_daily_wc_message(matches, date_str)
+    try:
+        await loading.delete()
+    except Exception:
+        pass
     await _send_long(update, msg)
 
 
 async def _wc_live(update: Update) -> None:
-    await update.message.reply_text("🔴 Đang kiểm tra trận live...", parse_mode="HTML")
+    loading = await update.message.reply_text("🔴 Đang kiểm tra trận live...", parse_mode="HTML")
     matches = await fetch_live_matches()
+    try:
+        await loading.delete()
+    except Exception:
+        pass
     if not matches:
         await update.message.reply_text(
             "⚽ Hiện không có trận nào đang diễn ra.", parse_mode="HTML"
@@ -149,7 +161,7 @@ async def _wc_live(update: Update) -> None:
 
 async def _wc_results_today(update: Update) -> None:
     today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
-    await update.message.reply_text("⏳ Đang lấy kết quả...", parse_mode="HTML")
+    loading = await update.message.reply_text("⏳ Đang lấy kết quả...", parse_mode="HTML")
 
     matches = wc_db.get_finished_matches_date(today)
     if not matches:
@@ -158,6 +170,11 @@ async def _wc_results_today(update: Update) -> None:
         for m in raw:
             wc_db.upsert_match(m)
         matches = wc_db.get_finished_matches_date(today)
+
+    try:
+        await loading.delete()
+    except Exception:
+        pass
 
     if not matches:
         await update.message.reply_text(
@@ -173,10 +190,14 @@ async def _wc_results_today(update: Update) -> None:
 
 
 async def _wc_team(update: Update, team_search: str) -> None:
-    await update.message.reply_text(
+    loading = await update.message.reply_text(
         f"🔍 Tìm lịch đấu của <b>{team_search}</b>...", parse_mode="HTML"
     )
     matches, matched_name = await fetch_team_matches(team_search)
+    try:
+        await loading.delete()
+    except Exception:
+        pass
 
     if not matches:
         await update.message.reply_text(
@@ -191,7 +212,7 @@ async def _wc_team(update: Update, team_search: str) -> None:
 
 
 async def _wc_standings(update: Update, group_filter: str = None) -> None:
-    await update.message.reply_text("⏳ Đang lấy bảng xếp hạng...", parse_mode="HTML")
+    loading = await update.message.reply_text("⏳ Đang lấy bảng xếp hạng...", parse_mode="HTML")
     standings = await fetch_standings()
 
     if group_filter:
@@ -201,6 +222,10 @@ async def _wc_standings(update: Update, group_filter: str = None) -> None:
         ]
 
     msg = build_standings_message(standings)
+    try:
+        await loading.delete()
+    except Exception:
+        pass
     await _send_long(update, msg)
 
 
