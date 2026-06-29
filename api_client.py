@@ -14,6 +14,7 @@ Format thực tế:
 ]
 """
 import hashlib
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
@@ -360,32 +361,50 @@ def parse_schedule_response(class_id: str, data) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def fetch_schedule(class_id: str) -> list[dict]:
-    """Gọi API và trả về danh sách events đã parse."""
+    """Gọi API và trả về danh sách events đã parse. Tự động retry 2 lần nếu lỗi mạng."""
     payload = {"class_id": class_id}
     logger.info("Fetching schedule for class_id=%s", class_id)
-    try:
-        async with httpx.AsyncClient(timeout=30, verify=False) as client:
-            response = await client.post(
-                SCHEDULE_API_URL,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "User-Agent": "TelegramScheduleBot/1.0",
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            logger.debug("Raw response for %s: %s", class_id, str(data)[:300])
-            return parse_schedule_response(class_id, data)
-    except Exception as e:
-        logger.exception("Error fetching schedule for %s: %s", class_id, e)
+    last_err: Exception | None = None
+    for attempt in range(3):  # tối đa 3 lần (lần 1 + 2 retry)
+        if attempt > 0:
+            wait = 5 * (2 ** (attempt - 1))  # 5s, 10s
+            logger.info("Retry %d/%d sau %ds (class_id=%s)…", attempt, 2, wait, class_id)
+            await asyncio.sleep(wait)
+        try:
+            async with httpx.AsyncClient(timeout=30, verify=False) as client:
+                response = await client.post(
+                    SCHEDULE_API_URL,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "User-Agent": "TelegramScheduleBot/1.0",
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                logger.debug("Raw response for %s: %s", class_id, str(data)[:300])
+                return parse_schedule_response(class_id, data)
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            last_err = e
+            logger.warning("Lỗi mạng lần %d khi fetch %s: %s", attempt + 1, class_id, e)
+            continue  # retry
+        except httpx.HTTPStatusError as e:
+            logger.error("API lịch học HTTP %s cho %s: %s", e.response.status_code, class_id, e)
+            break  # HTTP error → không retry
+        except Exception as e:
+            logger.exception("Lỗi không xác định khi fetch schedule cho %s: %s", class_id, e)
+            break
+
+    if last_err is not None:
+        logger.error("Không kết nối được API lịch học sau 3 lần thử (class_id=%s): %s",
+                     class_id, last_err)
     return []
+
 
 
 async def fetch_all_schedules() -> list[dict]:
     """Fetch lịch học cho tất cả class_id, deduplicate theo event id."""
-    import asyncio
     tasks = [fetch_schedule(cid) for cid in CLASS_IDS]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 

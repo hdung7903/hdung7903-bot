@@ -5,6 +5,7 @@ from datetime import datetime
 from wc_client import team_vn_name
 
 STAGE_VN = {
+    # ESPN format
     "GROUP_STAGE":       "Vòng bảng",
     "LAST_32":           "Vòng 32",
     "LAST_16":           "Vòng 16",
@@ -12,6 +13,14 @@ STAGE_VN = {
     "SEMI_FINALS":       "Bán kết",
     "THIRD_PLACE":       "Tranh hạng 3",
     "FINAL":             "🏆 Chung kết",
+    # FIFA format
+    "First Stage":       "Vòng bảng",
+    "Round of 32":       "Vòng 32",
+    "Round of 16":       "Vòng 16",
+    "Quarter-finals":    "Tứ kết",
+    "Semi-finals":       "Bán kết",
+    "Third place play-off": "Tranh hạng 3",
+    "Final":             "🏆 Chung kết",
 }
 
 STATUS_VN = {
@@ -29,30 +38,62 @@ STATUS_VN = {
 WEEKDAY_VN = ["T.Hai", "T.Ba", "T.Tư", "T.Năm", "T.Sáu", "T.Bảy", "CN"]
 
 FLAG_MAP = {
-    "Germany":          "🇩🇪", "France":           "🇫🇷", "England":          "🇬🇧",
-    "Spain":            "🇪🇸", "Portugal":         "🇵🇹", "Netherlands":      "🇳🇱",
-    "Belgium":          "🇧🇪", "Italy":            "🇮🇹", "Croatia":          "🇭🇷",
-    "Denmark":          "🇩🇰", "Switzerland":      "🇨🇭", "Sweden":           "🇸🇪",
-    "Poland":           "🇵🇱", "Serbia":           "🇷🇸", "Hungary":          "🇭🇺",
-    "Austria":          "🇦🇹", "Türkiye":          "🇹🇷", "Turkey":           "🇹🇷",
-    "Scotland":         "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "Ukraine":          "🇺🇦", "Romania":          "🇷🇴",
-    "Slovakia":         "🇸🇰", "Slovenia":         "🇸🇮", "Georgia":          "🇬🇪",
-    "Albania":          "🇦🇱",
-    "Argentina":        "🇦🇷", "Brazil":           "🇧🇷", "United States":    "🇺🇸",
-    "Mexico":           "🇲🇽", "Canada":           "🇨🇦", "Uruguay":          "🇺🇾",
-    "Colombia":         "🇨🇴", "Ecuador":          "🇪🇨", "Venezuela":        "🇻🇪",
-    "Chile":            "🇨🇱", "Peru":             "🇵🇪", "Panama":           "🇵🇦",
-    "Costa Rica":       "🇨🇷", "Honduras":         "🇭🇳", "Jamaica":          "🇯🇲",
-    "Japan":            "🇯🇵", "Korea Republic":   "🇰🇷", "IR Iran":          "🇮🇷",
-    "Australia":        "🇦🇺", "Saudi Arabia":     "🇸🇦", "Qatar":            "🇶🇦",
-    "Jordan":           "🇯🇴", "Iraq":             "🇮🇶", "Uzbekistan":       "🇺🇿",
-    "China PR":         "🇨🇳",
-    "Morocco":          "🇲🇦", "Nigeria":          "🇳🇬", "Senegal":          "🇸🇳",
-    "Egypt":            "🇪🇬", "Côte d'Ivoire":   "🇨🇮", "Cameroon":         "🇨🇲",
-    "South Africa":     "🇿🇦", "Tunisia":          "🇹🇳", "Algeria":          "🇩🇿",
-    "Ghana":            "🇬🇭", "DR Congo":         "🇨🇩",
-    "New Zealand":      "🇳🇿",
+    # Châu Âu
+    "Germany":                  "🇩🇪", "France":            "🇫🇷", "England":       "🇬🇧",
+    "Spain":                    "🇪🇸", "Portugal":          "🇵🇹", "Netherlands":   "🇳🇱",
+    "Belgium":                  "🇧🇪", "Italy":             "🇮🇹", "Croatia":       "🇭🇷",
+    "Denmark":                  "🇩🇰", "Switzerland":       "🇨🇭", "Sweden":        "🇸🇪",
+    "Poland":                   "🇵🇱", "Serbia":            "🇷🇸", "Hungary":       "🇭🇺",
+    "Austria":                  "🇦🇹", "Türkiye":           "🇹🇷", "Turkey":        "🇹🇷",
+    "Scotland":                 "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "Ukraine":           "🇺🇦", "Romania":       "🇷🇴",
+    "Slovakia":                 "🇸🇰", "Slovenia":          "🇸🇮", "Georgia":       "🇬🇪",
+    "Albania":                  "🇦🇱",
+    "Czechia":                  "🇨🇿", "Czech Republic":    "🇨🇿",   # FIFA dùng "Czechia"
+    "Bosnia and Herzegovina":   "🇧🇦",
+    "North Macedonia":          "🇲🇰",
+    "Kosovo":                   "🇽🇰",
+    "Wales":                    "🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+    "Northern Ireland":         "🇬🇧",
+    # Châu Mỹ
+    "Argentina":                "🇦🇷", "Brazil":            "🇧🇷",
+    "United States":            "🇺🇸", "USA":               "🇺🇸",   # FIFA dùng "USA"
+    "Mexico":                   "🇲🇽", "Canada":            "🇨🇦", "Uruguay":       "🇺🇾",
+    "Colombia":                 "🇨🇴", "Ecuador":           "🇪🇨", "Venezuela":     "🇻🇪",
+    "Chile":                    "🇨🇱", "Peru":              "🇵🇪", "Panama":        "🇵🇦",
+    "Costa Rica":               "🇨🇷", "Honduras":          "🇭🇳", "Jamaica":       "🇯🇲",
+    "Paraguay":                 "🇵🇾", "Bolivia":           "🇧🇴",
+    "El Salvador":              "🇸🇻", "Haiti":             "🇭🇹",
+    "Trinidad and Tobago":      "🇹🇹", "Guatemala":         "🇬🇹",
+    # Châu Á
+    "Japan":                    "🇯🇵",
+    "Korea Republic":           "🇰🇷", "South Korea":       "🇰🇷",   # ESPN & FIFA khác nhau
+    "IR Iran":                  "🇮🇷", "Iran":              "🇮🇷",
+    "Australia":                "🇦🇺", "Saudi Arabia":      "🇸🇦", "Qatar":         "🇶🇦",
+    "Jordan":                   "🇯🇴", "Iraq":              "🇮🇶", "Uzbekistan":    "🇺🇿",
+    "China PR":                 "🇨🇳", "China":             "🇨🇳",
+    "Indonesia":                "🇮🇩", "Vietnam":           "🇻🇳",
+    "Thailand":                 "🇹🇭", "Philippines":       "🇵🇭",
+    "Bahrain":                  "🇧🇭", "Oman":              "🇴🇲",
+    "United Arab Emirates":     "🇦🇪", "UAE":               "🇦🇪",
+    # Châu Phi
+    "Morocco":                  "🇲🇦", "Nigeria":           "🇳🇬", "Senegal":       "🇸🇳",
+    "Egypt":                    "🇪🇬",
+    "Côte d'Ivoire":            "🇨🇮", "Ivory Coast":       "🇨🇮",
+    "Cameroon":                 "🇨🇲",
+    "South Africa":             "🇿🇦", "Tunisia":           "🇹🇳", "Algeria":       "🇩🇿",
+    "Ghana":                    "🇬🇭", "DR Congo":          "🇨🇩", "Mali":          "🇲🇱",
+    "Angola":                   "🇦🇴", "Mozambique":        "🇲🇿",
+    "Tanzania":                 "🇹🇿", "Kenya":             "🇰🇪",
+    "Zambia":                   "🇿🇲", "Zimbabwe":          "🇿🇼",
+    # Châu Đại Dương
+    "New Zealand":              "🇳🇿", "New Caledonia":     "🇳🇨",
+    # Caribbean / khác
+    "Curaçao":                  "🇨🇼",
+    "Haiti":                    "🇭🇹",
+    "Trinidad and Tobago":      "🇹🇹",
+    "Jamaica":                  "🇯🇲",
 }
+
 
 # ── Kênh VTV theo khung giờ (giờ VN) ─────────────────────────────────────────
 # VTV phát sóng toàn bộ 104 trận WC 2026. Kênh chủ lực là VTV3, VTV2, VTV9.
@@ -94,7 +135,19 @@ def _vtv_channel(vn_time: str) -> str:
 
 
 def flag(team: str) -> str:
-    return FLAG_MAP.get(team, "🏳️")
+    """Trả về cờ emoji. Case-insensitive fallback."""
+    if not team:
+        return "🏳️"
+    # Direct lookup
+    f = FLAG_MAP.get(team)
+    if f:
+        return f
+    # Case-insensitive lookup
+    team_l = team.lower()
+    for k, v in FLAG_MAP.items():
+        if k.lower() == team_l:
+            return v
+    return "🏳️"
 
 
 def team_label(team: str) -> str:
@@ -112,16 +165,30 @@ def _fmt_date(vn_date: str) -> str:
         return vn_date
 
 
+def _fmt_group(grp: str) -> str:
+    """Format group label từ FIFA ('Group A') hoặc ESPN ('GROUP_A') → 'Bảng A'."""
+    if not grp:
+        return ""
+    # FIFA format: "Group A"
+    if grp.lower().startswith("group "):
+        letter = grp[6:].strip()
+        return f"Bảng {letter}"
+    # ESPN format: "GROUP_A" or "GROUP_A_2"
+    return grp.replace("GROUP_", "Bảng ").replace("_", " ").strip()
+
+
 def _goals_by_team(goals: list[dict], team: str) -> str:
     """Format danh sách bàn thắng của 1 đội."""
     scorers = []
     for g in goals:
         if g.get("team", "").lower() == team.lower():
             name    = g.get("scorer", "?")
-            minute  = g.get("minute", "?")
+            minute  = g.get("minute", "?").rstrip("'")
+            assist  = g.get("assist", "")
             typ     = g.get("type", "NORMAL")
             suffix  = " (OG)" if typ == "OWN_GOAL" else (" (P)" if typ == "PENALTY" else "")
-            scorers.append(f"{name}{suffix} {minute}'")
+            assist_str = f" 🅰️{assist}" if assist else ""
+            scorers.append(f"{name}{suffix}{assist_str} {minute}'")
     return ", ".join(scorers) if scorers else ""
 
 
@@ -131,10 +198,11 @@ def _cards_by_team(cards: list[dict], team: str, is_red: bool = False) -> str:
     for c in cards:
         if c.get("team", "").lower() == team.lower():
             player  = c.get("player", "?")
-            minute  = c.get("minute", "?")
+            minute  = c.get("minute", "?").rstrip("'")
             suffix  = " (2Y)" if c.get("type") == "SECOND_YELLOW" else ""
             items.append(f"{player}{suffix} {minute}'")
     return ", ".join(items) if items else ""
+
 
 
 def format_match(m: dict, show_scorers: bool = True) -> str:
@@ -144,7 +212,7 @@ def format_match(m: dict, show_scorers: bool = True) -> str:
     status     = m.get("status", "SCHEDULED")
     stage      = STAGE_VN.get(m.get("stage", ""), m.get("stage", ""))
     grp        = m.get("grp") or m.get("group", "")
-    grp_label  = f" | {grp.replace('GROUP_', 'Bảng ')}" if grp else ""
+    grp_label  = f" | {_fmt_group(grp)}" if grp else ""
     status_lbl = STATUS_VN.get(status, status)
     time_str   = m.get("vn_time") or "TBA"
 
@@ -192,7 +260,7 @@ def build_result_message(match: dict) -> str:
     as_    = match.get("away_score", 0)
     stage  = STAGE_VN.get(match.get("stage", ""), match.get("stage", ""))
     grp    = match.get("grp") or match.get("group", "")
-    grp_label = f" | {grp.replace('GROUP_', 'Bảng ')}" if grp else ""
+    grp_label = f" | {_fmt_group(grp)}" if grp else ""
     time_str  = match.get("vn_time") or "?"
     winner    = match.get("winner")
 
@@ -257,11 +325,11 @@ def build_result_message(match: dict) -> str:
     # Kết quả chung
     lines.append("")
     if winner == "HOME_TEAM":
-        lines.append(f"🏆 {result_icon} <b>{team_vn_name(home)}</b> giành chiến thắng!")
+        lines.append(f"🏆 <b>{team_vn_name(home)}</b> giành chiến thắng!")
     elif winner == "AWAY_TEAM":
-        lines.append(f"🏆 {result_icon} <b>{team_vn_name(away)}</b> giành chiến thắng!")
+        lines.append(f"🏆 <b>{team_vn_name(away)}</b> giành chiến thắng!")
     else:
-        lines.append(f"🤝 Trận đấu kết thúc hoà!")
+        lines.append("🤝 Trận đấu kết thúc hoà!")
 
     return "\n".join(lines)
 
@@ -279,7 +347,7 @@ def build_daily_wc_message(matches: list[dict], vn_date: str) -> str:
         status     = m.get("status", "SCHEDULED")
         stage      = STAGE_VN.get(m.get("stage", ""), m.get("stage", ""))
         grp        = m.get("grp") or m.get("group", "")
-        grp_label  = f" | {grp.replace('GROUP_', 'Bảng ')}" if grp else ""
+        grp_label  = f" | {_fmt_group(grp)}" if grp else ""
         status_lbl = STATUS_VN.get(status, status)
         time_str   = m.get("vn_time") or "TBA"
         home_lbl   = team_label(home)

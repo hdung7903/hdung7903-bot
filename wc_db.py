@@ -16,7 +16,7 @@ def init_wc_tables() -> None:
     with get_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS wc_matches (
-                id              INTEGER PRIMARY KEY,
+                id              TEXT PRIMARY KEY,
                 utc_date        TEXT,
                 vn_date         TEXT,
                 vn_time         TEXT,
@@ -41,12 +41,44 @@ def init_wc_tables() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS wc_notifications (
-                match_id        INTEGER NOT NULL,
+                match_id        TEXT NOT NULL,
                 notif_type      TEXT NOT NULL,
                 sent_at         TEXT DEFAULT (datetime('now')),
                 PRIMARY KEY (match_id, notif_type)
             );
         """)
+        # Migration: drop và recreate nếu id column vẫn là INTEGER (schema cũ dùng ESPN)
+        try:
+            col_info = conn.execute("PRAGMA table_info(wc_matches)").fetchall()
+            id_col = next((r for r in col_info if r[1] == "id"), None)
+            if id_col and id_col[2].upper() == "INTEGER":
+                logger.info("Migrating wc_matches: dropping old INTEGER id schema")
+                conn.executescript("""
+                    DROP TABLE IF EXISTS wc_matches;
+                    DROP TABLE IF EXISTS wc_notifications;
+                """)
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS wc_matches (
+                        id              TEXT PRIMARY KEY,
+                        utc_date        TEXT, vn_date TEXT, vn_time TEXT,
+                        status          TEXT, stage TEXT, grp TEXT, matchday INTEGER,
+                        home_team TEXT, home_team_tla TEXT,
+                        away_team TEXT, away_team_tla TEXT,
+                        home_score INTEGER, away_score INTEGER,
+                        ht_home INTEGER, ht_away INTEGER, winner TEXT,
+                        goals_json TEXT, yellow_cards_json TEXT, red_cards_json TEXT,
+                        notified_result INTEGER DEFAULT 0,
+                        updated_at TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE TABLE IF NOT EXISTS wc_notifications (
+                        match_id TEXT NOT NULL, notif_type TEXT NOT NULL,
+                        sent_at TEXT DEFAULT (datetime('now')),
+                        PRIMARY KEY (match_id, notif_type)
+                    );
+                """)
+        except Exception as e:
+            logger.warning("WC migration check failed: %s", e)
+
         # Migration: thêm cột mới nếu chưa có (cho DB cũ)
         for col, col_type in [
             ("yellow_cards_json", "TEXT"),

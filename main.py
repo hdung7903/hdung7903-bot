@@ -4,7 +4,10 @@ main.py – Entry point: khởi động bot, scheduler, module lịch học + WC
 import logging
 import asyncio
 import sys
+import time
 from datetime import datetime, timedelta, timezone
+
+import httpx
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -255,10 +258,44 @@ async def on_shutdown(application: Application) -> None:
     logger.info("👋 Bot đã tắt.")
 
 
+# Trạng thái theo dõi network để tránh spam log khi mất mạng liên tục
+_net_down_since: float = 0.0        # monotonic time khi mất mạng lần đầu
+_net_last_log: float = 0.0          # monotonic time lần cuối log warning
+_NET_LOG_INITIAL_INTERVAL = 60      # 1 phút đầu: log mỗi 1 phút
+_NET_LOG_MAX_INTERVAL = 600         # Sau đó: log tối đa mỗi 10 phút
+
+
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if isinstance(context.error, (NetworkError, TimedOut)):
-        logger.warning("Telegram network hiccup while polling: %s", context.error)
+    global _net_down_since, _net_last_log
+
+    # Lỗi mạng/kết nối – không cần traceback
+    is_network_err = isinstance(
+        context.error,
+        (NetworkError, TimedOut, httpx.ConnectError, httpx.TimeoutException)
+    )
+    if is_network_err:
+        now = time.monotonic()
+        if _net_down_since == 0.0:
+            _net_down_since = now
+            _net_last_log = now
+            logger.warning("Mất kết nối mạng: %s", context.error)
+        else:
+            # Tính interval log tăng dần theo thời gian mất mạng
+            down_secs = now - _net_down_since
+            log_interval = min(_NET_LOG_INITIAL_INTERVAL * max(1, int(down_secs / 120)),
+                               _NET_LOG_MAX_INTERVAL)
+            if now - _net_last_log >= log_interval:
+                _net_last_log = now
+                logger.warning("Vẫn mất kết nối (%.0f phút): %s",
+                               down_secs / 60, context.error)
         return
+
+    # Kết nối trở lại – reset counter
+    if _net_down_since > 0.0:
+        down_mins = (time.monotonic() - _net_down_since) / 60
+        logger.info("✅ Kết nối mạng phục hồi sau %.0f phút.", down_mins)
+        _net_down_since = 0.0
+        _net_last_log = 0.0
 
     logger.exception("Telegram handler error", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:

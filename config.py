@@ -94,6 +94,11 @@ WC_STANDINGS_URL    = os.getenv(
     "WC_STANDINGS_URL",
     "https://site.web.api.espn.com/apis/v2/sports/soccer/fifa.world/standings",
 )
+# FIFA API – trả về Goals và Bookings đầy đủ trong HomeTeam/AwayTeam
+WC_FIFA_API_BASE    = os.getenv("WC_FIFA_API_BASE", "https://api.fifa.com/api/v3")
+WC_FIFA_COMPETITION = os.getenv("WC_FIFA_COMPETITION", "17")    # World Cup
+WC_FIFA_SEASON      = os.getenv("WC_FIFA_SEASON", "285023")     # 2026
+WC_FIFA_STAGE       = os.getenv("WC_FIFA_STAGE", "289273")      # First Stage (group)
 WC_START_DATE       = date(2026, 6, 11)
 WC_END_DATE         = date(2026, 7, 19)
 # Gửi thông báo lịch WC hàng ngày lúc mấy giờ (giờ VN)

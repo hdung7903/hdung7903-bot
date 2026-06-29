@@ -167,12 +167,14 @@ async def _wc_results_today(update: Update) -> None:
     today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
     loading = await update.message.reply_text("⏳ Đang lấy kết quả...", parse_mode="HTML")
 
-    matches = wc_db.get_finished_matches_date(today)
-    if not matches:
-        # Thử fetch lại
-        raw = await fetch_matches_by_date(today)
-        for m in raw:
-            wc_db.upsert_match(m)
+    # Luôn fetch fresh để có goals/cards đầy đủ từ FIFA
+    raw = await fetch_matches_by_date(today)
+    for m in raw:
+        wc_db.upsert_match(m)
+    matches = [m for m in raw if m.get("status") == "FINISHED"]
+
+    # Fallback DB nếu API fail
+    if not matches and not raw:
         matches = wc_db.get_finished_matches_date(today)
 
     try:
@@ -191,6 +193,7 @@ async def _wc_results_today(update: Update) -> None:
         lines.append(format_match(m, show_scorers=True))
         lines.append("─" * 28)
     await _send_long(update, "\n".join(lines))
+
 
 
 async def _wc_team(update: Update, team_search: str) -> None:
