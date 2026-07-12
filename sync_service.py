@@ -1,6 +1,3 @@
-"""
-sync_service.py – Orchestrate: fetch API → save DB → sync GCal → notify Telegram.
-"""
 import logging
 import asyncio
 from datetime import datetime
@@ -8,7 +5,7 @@ from datetime import datetime
 import database as db
 from api_client import fetch_all_schedules
 from calendar_sync import sync_all_events
-from config import GOOGLE_CALENDAR_ENABLED
+from config import GOOGLE_CALENDAR_ENABLED, MANUAL_SCHEDULE_CLASS_ID
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +17,7 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     """
     logger.info("Starting schedule sync at %s", datetime.now().isoformat())
 
-    # 1. Fetch từ API
+    # 1. Fetch từ API + lịch thủ công JSON
     events = await fetch_all_schedules()
     total = len(events)
 
@@ -38,6 +35,14 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
             new_events.append(event)
         elif is_changed:
             changed_events.append(event)
+
+    # 2b. Reconcile lịch thủ công: xóa event cũ không còn trong JSON mới
+    manual_events = [e for e in events if e.get("class_id") == MANUAL_SCHEDULE_CLASS_ID]
+    if manual_events:
+        current_manual_ids = {e["id"] for e in manual_events}
+        deleted = db.delete_stale_events_for_class(MANUAL_SCHEDULE_CLASS_ID, current_manual_ids)
+        if deleted:
+            logger.info("Reconcile: đã xóa %d lịch thủ công không còn trong JSON", deleted)
 
     logger.info("Sync result: total=%d, new=%d, changed=%d", total, len(new_events), len(changed_events))
 

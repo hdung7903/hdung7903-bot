@@ -106,3 +106,7 @@ WC_DAILY_NOTIFY_HOUR = int(os.getenv("WC_DAILY_NOTIFY_HOUR", "0"))
 # Kiểm tra kết quả live bao nhiêu phút 1 lần trong ngày có trận (0 = tắt)
 # Mặc định 3 phút để thông báo kết quả nhanh sau khi trận kết thúc
 WC_LIVE_CHECK_MINUTES = int(os.getenv("WC_LIVE_CHECK_MINUTES", "3"))
+
+# ── Lịch học thủ công (đọc từ file JSON) ───────────────────────────────────
+MANUAL_SCHEDULE_FILE     = os.getenv("MANUAL_SCHEDULE_FILE", "manual_schedule.json")
+MANUAL_SCHEDULE_CLASS_ID = os.getenv("MANUAL_SCHEDULE_CLASS_ID", "MANUAL-TA01-NVSPTH")

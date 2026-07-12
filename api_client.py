@@ -13,16 +13,21 @@ Format thực tế:
   ...
 ]
 """
-import hashlib
-import asyncio
 import logging
+import asyncio
+import hashlib
+import json
+import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
 
-from config import CLASS_IDS, DEFAULT_SESSION_TIMES, SCHEDULE_API_URL
+from config import (
+    CLASS_IDS, DEFAULT_SESSION_TIMES, SCHEDULE_API_URL,
+    MANUAL_SCHEDULE_FILE, MANUAL_SCHEDULE_CLASS_ID,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -454,7 +459,7 @@ async def fetch_schedule(class_id: str) -> list[dict]:
 
 
 async def fetch_all_schedules() -> list[dict]:
-    """Fetch lịch học cho tất cả class_id, deduplicate theo event id."""
+    """Fetch lịch học cho tất cả class_id (API + lịch thủ công JSON), deduplicate theo event id."""
     tasks = [fetch_schedule(cid) for cid in CLASS_IDS]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -465,6 +470,10 @@ async def fetch_all_schedules() -> list[dict]:
         else:
             all_events.extend(result)
 
+    # Thêm lịch thủ công từ file JSON
+    manual = fetch_manual_schedules()
+    all_events.extend(manual)
+
     seen: set[str] = set()
     unique = []
     for e in all_events:
@@ -472,3 +481,30 @@ async def fetch_all_schedules() -> list[dict]:
             seen.add(e["id"])
             unique.append(e)
     return unique
+
+
+def fetch_manual_schedules() -> list[dict]:
+    """
+    Đọc và parse lịch học từ file JSON thủ công.
+    Tự động bỏ qua nếu file không tồn tại.
+    Các cập nhật vào JSON sẽ được phản ánh ngay sau lần sync tiếp theo.
+    """
+    path = MANUAL_SCHEDULE_FILE
+    if not os.path.isabs(path):
+        # Đường dẫn tương đối → resolve từ thư mục chứa api_client.py
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(base_dir, path)
+
+    if not os.path.exists(path):
+        logger.debug("Manual schedule file not found: %s (bỏ qua)", path)
+        return []
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        events = parse_schedule_response(MANUAL_SCHEDULE_CLASS_ID, data)
+        logger.info("Manual schedule: đọc %d events từ %s", len(events), path)
+        return events
+    except Exception as e:
+        logger.error("Lỗi đọc manual_schedule.json: %s", e)
+        return []

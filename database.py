@@ -260,6 +260,27 @@ def get_event_ids_for_class(class_id: str) -> set[str]:
     return {row["id"] for row in rows}
 
 
+def delete_stale_events_for_class(class_id: str, current_ids: set[str]) -> int:
+    """
+    Xóa các events trong DB thuộc class_id nhưng không còn trong current_ids.
+    Trả về số events đã xóa.
+    Dùng cho reconcile lịch thủ công: nếu xóa 1 mục khỏi JSON → tự xóa khỏi DB.
+    """
+    existing = get_event_ids_for_class(class_id)
+    stale = existing - current_ids
+    if not stale:
+        return 0
+    with get_connection() as conn:
+        for eid in stale:
+            conn.execute("DELETE FROM schedule_events WHERE id = ?", (eid,))
+            conn.execute(
+                "DELETE FROM notifications_sent WHERE event_id = ?", (eid,)
+            )
+        conn.commit()
+    logger.info("Deleted %d stale events for class_id=%s", len(stale), class_id)
+    return len(stale)
+
+
 # ── Notifications ─────────────────────────────────────────────────────────────
 
 def is_notification_sent(event_id: str, notif_type: str) -> bool:
