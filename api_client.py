@@ -136,11 +136,12 @@ def _parse_approx_dates(text: str) -> list[str]:
 
 def _parse_date_range(text: str) -> Optional[list[str]]:
     """
-    Xử lý khoảng thời gian dạng '30/11 đến 02/01/2027'.
+    Xử lý khoảng thời gian có từ khóa "dến" hoặc "đến" hoặc "và".
     Trả về [start_date, end_date] hoặc None.
+    VD: '30/11 đến 02/01/2027', '30/9 và 01/10/2026'
     """
     m = re.search(
-        r'(\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s*đến\s*(\d{1,2}/\d{1,2}(?:/\d{2,4})?)',
+        r'(\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s*(?:đến|den|và|va)\s*(\d{1,2}/\d{1,2}(?:/\d{2,4})?)',
         text, re.IGNORECASE
     )
     if not m:
@@ -157,7 +158,6 @@ def _parse_date_range(text: str) -> Optional[list[str]]:
                 pass
         return None
 
-    # Cố gắng lấy năm từ text gốc
     year_m = re.search(r'(\d{4})', text)
     year = int(year_m.group(1)) if year_m else datetime.now().year
 
@@ -166,6 +166,38 @@ def _parse_date_range(text: str) -> Optional[list[str]]:
     if start and end:
         return [start, end]
     return None
+
+
+def _parse_hyphen_range(text: str) -> Optional[list[str]]:
+    """
+    Xử lý khoảng thời gian dạng 'Từ 15-20/07/2026' hoặc 'Từ 015-20/07/2026'.
+    Dấu gạch ngang giữa ngày (không có từ 'đến').
+    Trả về [start_date, end_date] hoặc None.
+    """
+    # Nhận regex: (từ\s+)? ngày1 - ngày2 / tháng / năm
+    m = re.search(
+        r'(?:từ\s+)?(\d{1,3})\s*-\s*(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})',
+        text, re.IGNORECASE
+    )
+    if not m:
+        # Dạng không có năm trong pattern: 'Từ 05- 12 /10/2026'
+        m = re.search(
+            r'(?:từ\s+)?(\d{1,3})\s*-\s*(\d{1,2})\s*/\s*(\d{1,2})\s*/?(\d{4})',
+            text, re.IGNORECASE
+        )
+    if not m:
+        return None
+
+    try:
+        day1  = int(m.group(1)) % 100   # Nhận typo "015" -> 15 bằng mod 100
+        day2  = int(m.group(2))
+        month = int(m.group(3))
+        year  = int(m.group(4))
+        start = datetime(year, month, day1).strftime("%Y-%m-%d")
+        end   = datetime(year, month, day2).strftime("%Y-%m-%d")
+        return [start, end]
+    except (ValueError, IndexError):
+        return None
 
 
 def parse_time_field(time_str: str) -> list[dict]:
@@ -177,20 +209,37 @@ def parse_time_field(time_str: str) -> list[dict]:
     Ví dụ:
       "Tối 08/05/2026 (Thứ 6)"          → [{session:toi, date:2026-05-08}]
       "Tối 22,23/05/2026 (Thứ 6, 7)"    → [{toi,2026-05-22}, {toi,2026-05-23}]
-      "Sáng, chiều 14/06/2026 (CN)"      → [{sang,2026-06-14}, {chieu,2026-06-14}]
-      "DK: tháng 10/2026"               → [{sang,2026-10-01, is_approximate:True}]
-      "Tháng 9/2026"                     → [{sang,2026-09-01, is_approximate:True}]
-      "30/11 đến 02/01/2027"            → [{sang,2026-11-30, date_range_end:2027-01-02}]
+      "Tối 08,05//2026"                  → [{toi,2026-05-08}, {toi,2026-05-05}]  (// tự sửa)
+      "Từ 015-20 /07/2026"              → range 2026-07-15 – 2026-07-20
+      "30/9 và 01/10/2026"              → range 2026-09-30 – 2026-10-01
+      "Tháng 10,11 /2026"              → [{sang,2026-10-01,approx}, {sang,2026-11-01,approx}]
     """
     if not time_str or not isinstance(time_str, str):
         return []
 
-    time_str = time_str.strip()
-    results = []
-    sessions = _detect_sessions(time_str)
+    # ── Tiền xử lý: chuẩn hoá một số typo phổ biến ───────────────────────────
+    cleaned = time_str.strip()
+    cleaned = re.sub(r'/{2,}', '/', cleaned)        # '//' → '/'
+    cleaned = re.sub(r',\s*/', '/', cleaned)        # ',/' → '/'
+    cleaned = re.sub(r'\s+', ' ', cleaned)          # nhiều space → 1
 
-    # ── 1. Khoảng thời gian (đến) ────────────────────────────────────────────
-    date_range = _parse_date_range(time_str)
+    results = []
+    sessions = _detect_sessions(cleaned)
+
+    # ── 1. Khoảng có dấu gạch ngang ("Từ 15-20/07/2026") ────────────────────
+    hyphen_range = _parse_hyphen_range(cleaned)
+    if hyphen_range:
+        for session in sessions:
+            results.append({
+                "session": session,
+                "date": hyphen_range[0],
+                "is_approximate": False,
+                "date_range_end": hyphen_range[1],
+            })
+        return results
+
+    # ── 2. Khoảng có "đến" / "và" ("30/9 và 01/10/2026") ────────────────────
+    date_range = _parse_date_range(cleaned)
     if date_range:
         for session in sessions:
             results.append({
@@ -201,11 +250,11 @@ def parse_time_field(time_str: str) -> list[dict]:
             })
         return results
 
-    # ── 2. Ngày cụ thể: "22,23/05/2026" hay "08/05/2026" ────────────────────
+    # ── 3. Ngày cụ thể: "22,23/05/2026" hay "08/05/2026" ────────────────────
     # Pattern: số ngày (có thể nhiều, cách nhau dấu phẩy) / tháng / năm
     month_year_match = re.search(
         r'(\d{1,2}(?:\s*,\s*\d{1,2})*)\s*,?\s*/\s*(\d{1,2})\s*/?\s*(\d{4})',
-        time_str
+        cleaned
     )
     if month_year_match:
         days_str = month_year_match.group(1)
@@ -224,11 +273,12 @@ def parse_time_field(time_str: str) -> list[dict]:
                         "date_range_end": None,
                     })
             except ValueError:
-                logger.warning("Invalid date: day=%d month=%d year=%d", day, month, year)
-        return results
+                logger.warning("Invalid date: day=%d month=%d year=%d in %r", day, month, year, time_str)
+        if results:
+            return results
 
-    # ── 3. Ngày dự kiến: "Tháng 10/2026", "DK: tháng 10/2026" ──────────────
-    approx_dates = _parse_approx_dates(time_str)
+    # ── 4. Ngày dự kiến: "Tháng 10/2026", "DK: tháng 10/2026" ──────────────
+    approx_dates = _parse_approx_dates(cleaned)
     if approx_dates:
         for approx_date in approx_dates:
             for session in sessions:

@@ -3,7 +3,7 @@ notifier.py – Format thông báo Telegram, hỗ trợ link Teams.
 """
 import logging
 from html import escape
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import database as db
 from config import NOTIFY_BEFORE_HOURS
@@ -80,11 +80,18 @@ def build_schedule_message(events: list[dict], title: str = "📅 Lịch học")
     return "\n".join(parts)
 
 
-def build_reminder_message(event: dict) -> str:
+def build_reminder_message(event: dict, hours_left: float | None = None) -> str:
+    if hours_left is not None:
+        if hours_left < 1:
+            time_label = f"{int(hours_left * 60)} phút nữa"
+        else:
+            time_label = f"{hours_left:.0f}h nữa"
+    else:
+        time_label = f"{NOTIFY_BEFORE_HOURS}h"
     return (
-        f"⏰ <b>Nhắc nhở: Lịch học ngày mai!</b>\n\n"
+        f"⏰ <b>Nhắc nhở: Lịch học sắp tới!</b>\n\n"
         f"{format_event(event, show_link=True)}\n\n"
-        f"<i>Nhắc trước {NOTIFY_BEFORE_HOURS}h</i>"
+        f"<i>⏳ Còn {time_label}</i>"
     )
 
 
@@ -151,28 +158,56 @@ def build_sync_notification(
     return "\n".join(parts)
 
 
-def get_events_needing_reminder() -> list[dict]:
-    """Trả về events cần nhắc nhở (trong vòng ~24h tới, chưa gửi)."""
-    now = datetime.now()
-    target_date = (now + timedelta(hours=NOTIFY_BEFORE_HOURS)).strftime("%Y-%m-%d")
-    events = db.get_events_for_date(target_date)
+VN_TZ = timezone(timedelta(hours=7))
+
+
+def get_events_needing_reminder() -> list[tuple[dict, float]]:
+    """
+    Trả về list (event, hours_left) cho các buổi học:
+    - Chưa gửi reminder
+    - Sắp bắt đầu trong vòng NOTIFY_BEFORE_HOURS giờ (theo giờ VN)
+    """
+    now_vn = datetime.now(VN_TZ)
+
+    # Lấy events trong hôm nay và ngày mai (giờ VN)
+    today_str    = now_vn.strftime("%Y-%m-%d")
+    tomorrow_str = (now_vn + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    candidates = (
+        db.get_events_for_date(today_str) +
+        db.get_events_for_date(tomorrow_str)
+    )
 
     result = []
-    for event in events:
+    for event in candidates:
         if db.is_notification_sent(event["id"], "reminder"):
             continue
-        if event.get("start_time"):
+
+        event_date = event.get("date")
+        start_time = event.get("start_time")
+
+        if not event_date:
+            continue
+
+        # Nếu có giờ cụ thể → tính khoảng cách chính xác
+        if start_time:
             try:
-                event_dt = datetime.strptime(
-                    f"{event['date']} {event['start_time']}", "%Y-%m-%d %H:%M"
+                event_dt = datetime(
+                    *[int(x) for x in event_date.split("-")],
+                    *[int(x) for x in start_time.split(":")],
+                    tzinfo=VN_TZ,
                 )
-                diff_h = (event_dt - now).total_seconds() / 3600
-                # Chỉ gửi nếu còn trong cửa sổ 0–(NOTIFY_BEFORE_HOURS+1) giờ
-                if 0 < diff_h <= NOTIFY_BEFORE_HOURS + 1:
-                    result.append(event)
-            except ValueError:
-                result.append(event)
+                diff_h = (event_dt - now_vn).total_seconds() / 3600
+                # Gửi nếu còn trong khoảng (0, NOTIFY_BEFORE_HOURS] giờ
+                if 0 < diff_h <= NOTIFY_BEFORE_HOURS:
+                    result.append((event, diff_h))
+            except (ValueError, TypeError):
+                # Không parse được giờ → gửi lucratively nếu là ngày mai
+                if event_date == tomorrow_str:
+                    result.append((event, 24.0))
         else:
-            result.append(event)
+            # Không có giờ cụ thể → chỉ gửi cho ngày mai
+            if event_date == tomorrow_str:
+                result.append((event, 24.0))
 
     return result

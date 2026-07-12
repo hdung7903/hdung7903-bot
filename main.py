@@ -27,6 +27,7 @@ from config import (
 )
 from handlers import register_fallback_handlers, register_handlers
 from wc_handlers import register_wc_handlers
+from error_reporter import setup_error_reporting
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s – %(message)s",
@@ -210,6 +211,15 @@ async def on_startup(application: Application) -> None:
     await bot.set_my_commands(_build_bot_commands())
     logger.info("✅ Telegram slash commands synced.")
 
+    # ── Error reporting: gửi ERROR/CRITICAL lên Telegram ─────────────────────
+    try:
+        subscribed = db.get_subscribed_users()
+        alert_chat_ids = [u["chat_id"] for u in subscribed] if subscribed else []
+        loop = asyncio.get_event_loop()
+        setup_error_reporting(bot, alert_chat_ids, loop)
+    except Exception:
+        logger.warning("Không setup được error reporting (sử sắp chưa có user đăng ký)")
+
     # ── Lịch học: đồng bộ 0h,7h,12h,17h ─────────────────────────────────────
     hours_str = ",".join(str(h) for h in SYNC_HOURS)
     scheduler.add_job(
@@ -217,10 +227,10 @@ async def on_startup(application: Application) -> None:
         trigger=CronTrigger(hour=hours_str, minute=0, timezone=TIMEZONE),
         args=[bot], id="sync_schedule", replace_existing=True,
     )
-    # Nhắc nhở lịch học mỗi giờ
+    # Nhắc nhở lịch học mỗi 30 phút (để không bỏ lỡ cửa sổ nhắc)
     scheduler.add_job(
         job_send_reminders,
-        trigger=CronTrigger(minute=0, timezone=TIMEZONE),
+        trigger=CronTrigger(minute="0,30", timezone=TIMEZONE),
         args=[bot], id="send_reminders", replace_existing=True,
     )
 

@@ -67,18 +67,19 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
 
 
 async def run_reminder_check(bot) -> int:
-    """Kiểm tra và gửi nhắc nhở cho sự kiện ngày mai. Trả về số nhắc đã gửi."""
+    """Kiểm tra và gửi nhắc nhở cho sự kiện sắp tới. Trả về số nhắc đã gửi."""
     from notifier import get_events_needing_reminder, build_reminder_message
 
-    events = get_events_needing_reminder()
+    items = get_events_needing_reminder()  # list of (event, hours_left)
     sent_count = 0
 
-    for event in events:
-        msg = build_reminder_message(event)
+    for event, hours_left in items:
+        msg = build_reminder_message(event, hours_left=hours_left)
         success = await _broadcast(bot, msg)
         if success:
             db.mark_notification_sent(event["id"], "reminder")
             sent_count += 1
+            logger.info("Sent reminder for event %s (%.1fh left)", event.get("id"), hours_left)
 
     if sent_count:
         logger.info("Sent %d reminder(s).", sent_count)

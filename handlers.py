@@ -19,6 +19,7 @@ from telegram.ext import (
 import database as db
 from config import CLASS_IDS, TELEGRAM_OWNER_USERNAME, WC_ENABLED
 from notifier import build_schedule_message, build_sync_report
+from error_reporter import refresh_error_reporting
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +316,8 @@ async def cmd_gcal_status(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cmd_dang_ky(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = str(update.effective_chat.id)
     db.set_user_subscription(chat_id, True)
+    # Cập nhật danh sách nhận error alert
+    refresh_error_reporting([u["chat_id"] for u in db.get_subscribed_users()])
     await update.message.reply_text(
         "✅ Bạn đã <b>đăng ký</b> nhận thông báo lịch học!\n"
         "Bot sẽ nhắc nhở bạn trước 24h khi có lịch học.",
@@ -326,6 +329,8 @@ async def cmd_dang_ky(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def cmd_huy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = str(update.effective_chat.id)
     db.set_user_subscription(chat_id, False)
+    # Cập nhật danh sách nhận error alert
+    refresh_error_reporting([u["chat_id"] for u in db.get_subscribed_users()])
     await update.message.reply_text(
         "🔕 Bạn đã <b>hủy đăng ký</b> nhận thông báo.\n"
         "Dùng /dang_ky để đăng ký lại.",

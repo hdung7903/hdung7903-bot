@@ -235,6 +235,22 @@ def get_all_events(include_approximate: bool = True) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_events_for_class(class_id: str, include_approximate: bool = True) -> list[dict]:
+    """Lấy tất cả events của 1 class_id."""
+    with get_connection() as conn:
+        if include_approximate:
+            rows = conn.execute(
+                "SELECT * FROM schedule_events WHERE class_id = ? ORDER BY date, start_time",
+                (class_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM schedule_events WHERE class_id = ? AND is_approximate = 0 ORDER BY date, start_time",
+                (class_id,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_event_ids_for_class(class_id: str) -> set[str]:
     """Lấy tất cả event IDs đang có trong DB cho một class."""
     with get_connection() as conn:
