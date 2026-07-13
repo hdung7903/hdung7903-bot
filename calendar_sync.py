@@ -103,7 +103,14 @@ def _get_calendar_service():
         return None
     except Exception as e:
         _GCAL_UNAVAILABLE_REASON = str(e)
-        logger.error("Google Calendar disabled: failed to get service: %s", e)
+        err_str = str(e).lower()
+        # invalid_grant / token hết hạn là lỗi kỳ vọng khi chưa refresh token → WARNING
+        # để không bị error_reporter spam Telegram mỗi lần sync
+        if any(k in err_str for k in ("invalid_grant", "token_expired", "unauthorized",
+                                      "invalid_client", "bad request")):
+            logger.warning("Google Calendar disabled (auth token expired): %s", e)
+        else:
+            logger.error("Google Calendar disabled: failed to get service: %s", e)
         return None
 
 

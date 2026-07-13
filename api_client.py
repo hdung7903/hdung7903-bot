@@ -282,6 +282,41 @@ def parse_time_field(time_str: str) -> list[dict]:
         if results:
             return results
 
+    # ── 3b. Ngày thiếu tháng: "08,05/2026" (do typo "08,05//2026") ────────────
+    # Khi `//` đã được rút thành `/`, dẫn đến pattern DD,DD/YYYY (không có tháng rõ ràng)
+    # Xử lý: dùng số cuối cùng trong dãy ngày làm tháng (dãy ngày bị cắt bớt 1 phần tử)
+    # Guard: không áp dụng nếu có từ "tháng" vì sẽ conflict với "Tháng 10,11/2026"
+    if not re.search(r't[hh][áa]ng', cleaned, re.IGNORECASE):
+        days_year_match = re.search(
+            r'(\d{1,2}(?:\s*,\s*\d{1,2})+)\s*/\s*(\d{4})(?!\d)',
+            cleaned
+        )
+        if days_year_match:
+            raw_days = [int(d.strip()) for d in days_year_match.group(1).split(",") if d.strip()]
+            year     = int(days_year_match.group(2))
+            # Số cuối cùng trong dãy = tháng, các số trước = ngày
+            if len(raw_days) >= 2:
+                month = raw_days[-1]
+                days  = raw_days[:-1]
+                logger.info("Recovered missing month from typo %r: days=%s month=%d year=%d",
+                            time_str, days, month, year)
+                for day in days:
+                    try:
+                        date = datetime(year, month, day).strftime("%Y-%m-%d")
+                        for session in sessions:
+                            results.append({
+                                "session": session,
+                                "date": date,
+                                "is_approximate": False,
+                                "date_range_end": None,
+                            })
+                    except ValueError:
+                        logger.warning("Invalid date (recovered): day=%d month=%d year=%d in %r",
+                                       day, month, year, time_str)
+                if results:
+                    return results
+
+
     # ── 4. Ngày dự kiến: "Tháng 10/2026", "DK: tháng 10/2026" ──────────────
     approx_dates = _parse_approx_dates(cleaned)
     if approx_dates:
