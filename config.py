@@ -55,7 +55,7 @@ CLASS_IDS = [
 DEFAULT_SESSION_TIMES = {
     "sang":   {"start": "08:00", "duration_hours": 2},   # Sáng  8:00 – 10:00
     "chieu":  {"start": "14:00", "duration_hours": 2},   # Chiều 14:00 – 16:00
-    "toi":    {"start": "19:00", "duration_hours": 2},   # Tối   19:00 – 21:00
+    "toi":    {"start": "19:30", "duration_hours": 2},   # Tối   19:30 – 21:30
 }
 
 # ── Google Calendar ───────────────────────────────────────────────────────────
