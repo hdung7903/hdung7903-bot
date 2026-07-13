@@ -29,11 +29,22 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     # 2. Upsert vào DB và phát hiện thay đổi
     new_events = []
     changed_events = []
+    # Dedup theo (date, session, subject) để tránh thông báo 2 lần
+    # khi cùng 1 buổi học tồn tại trong cả API lẫn manual_schedule.json
+    _seen_new: set[tuple] = set()
+    _seen_changed: set[tuple] = set()
     for event in events:
         is_new, is_changed = db.upsert_event(event)
-        if is_new:
+        lesson_key = (
+            event.get("date", ""),
+            event.get("session", ""),
+            (event.get("subject") or "").strip().lower(),
+        )
+        if is_new and lesson_key not in _seen_new:
+            _seen_new.add(lesson_key)
             new_events.append(event)
-        elif is_changed:
+        elif is_changed and lesson_key not in _seen_changed:
+            _seen_changed.add(lesson_key)
             changed_events.append(event)
 
     # 2b. Reconcile lịch thủ công: xóa event cũ không còn trong JSON mới

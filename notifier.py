@@ -166,6 +166,9 @@ def get_events_needing_reminder() -> list[tuple[dict, float]]:
     Trả về list (event, hours_left) cho các buổi học:
     - Chưa gửi reminder
     - Sắp bắt đầu trong vòng NOTIFY_BEFORE_HOURS giờ (theo giờ VN)
+
+    Dedup theo (date, session, subject) để tránh gửi 2 lần khi cùng 1 buổi
+    xuất hiện trong cả API lẫn manual_schedule.json với event_id khác nhau.
     """
     now_vn = datetime.now(VN_TZ)
 
@@ -178,18 +181,36 @@ def get_events_needing_reminder() -> list[tuple[dict, float]]:
         db.get_events_for_date(tomorrow_str)
     )
 
-    result = []
-    for event in candidates:
-        if db.is_notification_sent(event["id"], "reminder"):
-            continue
+    result: list[tuple[dict, float]] = []
+    # Dedup key: (date, session, subject) → để tránh lặp khi cùng buổi học
+    # nằm trong cả API và manual JSON với class_id khác nhau
+    seen_lessons: set[tuple[str, str, str]] = set()
 
+    for event in candidates:
         event_date = event.get("date")
         start_time = event.get("start_time")
+        session    = event.get("session", "sang")
+        subject    = (event.get("subject") or "").strip().lower()
 
         if not event_date:
             continue
 
-        # Nếu có giờ cụ thể → tính khoảng cách chính xác
+        # Kiểm tra đã gửi chưa (theo event_id)
+        if db.is_notification_sent(event["id"], "reminder"):
+            # Đánh dấu lesson này đã handled dù bằng event_id nào
+            seen_lessons.add((event_date, session, subject))
+            continue
+
+        # Dedup: nếu cùng buổi học đã được xử lý bởi event_id khác → bỏ qua
+        lesson_key = (event_date, session, subject)
+        if lesson_key in seen_lessons:
+            # Đánh dấu event này là sent luôn để tránh gửi ở lần check sau
+            db.mark_notification_sent(event["id"], "reminder")
+            logger.debug("Dedup reminder: %s already queued via another event_id", event["id"])
+            continue
+
+        # Tính khoảng cách thời gian
+        hours_left: float | None = None
         if start_time:
             try:
                 event_dt = datetime(
@@ -199,15 +220,21 @@ def get_events_needing_reminder() -> list[tuple[dict, float]]:
                 )
                 diff_h = (event_dt - now_vn).total_seconds() / 3600
                 # Gửi nếu còn trong khoảng (0, NOTIFY_BEFORE_HOURS] giờ
-                if 0 < diff_h <= NOTIFY_BEFORE_HOURS:
-                    result.append((event, diff_h))
+                if not (0 < diff_h <= NOTIFY_BEFORE_HOURS):
+                    continue
+                hours_left = diff_h
             except (ValueError, TypeError):
-                # Không parse được giờ → gửi lucratively nếu là ngày mai
-                if event_date == tomorrow_str:
-                    result.append((event, 24.0))
+                # Không parse được giờ → gửi nếu là ngày mai
+                if event_date != tomorrow_str:
+                    continue
+                hours_left = 24.0
         else:
             # Không có giờ cụ thể → chỉ gửi cho ngày mai
-            if event_date == tomorrow_str:
-                result.append((event, 24.0))
+            if event_date != tomorrow_str:
+                continue
+            hours_left = 24.0
+
+        seen_lessons.add(lesson_key)
+        result.append((event, hours_left))
 
     return result
