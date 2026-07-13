@@ -14,7 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Bot, BotCommand
 from telegram import Update
-from telegram.error import NetworkError, TimedOut
+from telegram.error import NetworkError, TimedOut, Conflict
 from telegram.ext import Application, ContextTypes
 
 import database as db
@@ -277,6 +277,14 @@ _NET_LOG_MAX_INTERVAL = 600         # Sau đó: log tối đa mỗi 10 phút
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     global _net_down_since, _net_last_log
+
+    # Conflict: 2 instance bot cùng chạy → tự thoát ngay
+    if isinstance(context.error, Conflict):
+        logger.critical(
+            "💀 Phát hiện 2 instance bot cùng chạy! Tự thoát để tránh xung đột.\n"
+            "Kiểm tra: docker ps | grep bot"
+        )
+        sys.exit(1)
 
     # Lỗi mạng/kết nối – không cần traceback
     is_network_err = isinstance(
