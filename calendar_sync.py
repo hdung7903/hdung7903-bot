@@ -17,16 +17,36 @@ _GCAL_CALENDAR_VALIDATED = False
 
 
 def _write_secret_json_if_needed(path: str, value: str, label: str) -> bool:
+    """
+    Ghi env var value ra file path.
+    - Nếu value rỗng và file đã có → dùng file cũ (không làm gì).
+    - Nếu value có giá trị → luôn ghi đè để env var mới có hiệu lực
+      (quan trọng khi token hết hạn và được cập nhật qua Coolify env).
+    """
     global _GCAL_UNAVAILABLE_REASON
-    if not value or os.path.exists(path):
+    if not value:
+        # Không có env var → dùng file sẵn có nếu có
         return True
+    # Có env var → ghi đè (kể cả khi file đã tồn tại)
     try:
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(value.strip())
-        logger.info("Google Calendar %s materialized from environment.", label)
+        # Chỉ ghi nếu nội dung thực sự khác (tránh I/O thừa)
+        new_content = value.strip()
+        existing_content = ""
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    existing_content = f.read().strip()
+            except OSError:
+                pass
+        if new_content != existing_content:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            logger.info("Google Calendar %s updated from environment variable.", label)
+        else:
+            logger.debug("Google Calendar %s: env var matches file, no write needed.", label)
         return True
     except OSError as e:
         _GCAL_UNAVAILABLE_REASON = f"cannot write {label} to {path}: {e}"
@@ -45,6 +65,11 @@ def _materialize_google_secrets() -> bool:
         GOOGLE_TOKEN_JSON,
         "token",
     )
+    # Nếu token file vừa được cập nhật → reset service cache để dùng token mới
+    if token_ok:
+        global _GCAL_SERVICE, _GCAL_UNAVAILABLE_REASON
+        _GCAL_SERVICE = None
+        _GCAL_UNAVAILABLE_REASON = None
     return credentials_ok and token_ok
 
 
