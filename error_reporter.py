@@ -26,6 +26,8 @@ _SUPPRESS_PATTERNS = (
     "ConnectError",
     "TimeoutException",
     "TimedOut",
+    "Timed out",           # python-telegram-bot string repr
+    "Failed to send message",  # broadcast timeout trong sync_service
     "NetworkError",
     "Temporary failure in name resolution",
     "Connection refused",

@@ -2,7 +2,8 @@ services:
   bot:
     build: .
     container_name: vinhuni-schedule-bot
-    restart: unless-stopped
+    restart: always
+    stop_grace_period: 30s
     environment:
       # ── Bắt buộc ──────────────────────────────────
       - TELEGRAM_BOT_TOKEN
@@ -40,9 +41,9 @@ services:
     healthcheck:
       test: ["CMD", "python", "healthcheck.py"]
       interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
 
 volumes:
   bot_data:

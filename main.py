@@ -327,6 +327,30 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+# Độ trễ retry khi mất mạng: bắt đầu 5s, tăng dần lên tối đa 60s
+_RETRY_INITIAL_DELAY = 5
+_RETRY_MAX_DELAY = 60
+
+
+def _build_application(scheduler: AsyncIOScheduler) -> Application:
+    """Tạo Application instance mới (cần rebuild sau mỗi lần restart)."""
+    application = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .connect_timeout(15)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(15)
+        .concurrent_updates(8)
+        .post_init(on_startup)
+        .post_shutdown(on_shutdown)
+        .build()
+    )
+    application.bot_data["scheduler"] = scheduler
+    application.bot_data["started_at"] = datetime.now(timezone.utc)
+    return application
+
+
 def main() -> None:
     token_ok, token_message = validate_telegram_token(TELEGRAM_BOT_TOKEN)
     if not token_ok:
@@ -337,39 +361,57 @@ def main() -> None:
         )
         sys.exit(1)
 
-    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
-
-    application = (
-        Application.builder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .connect_timeout(10)
-        .read_timeout(20)
-        .write_timeout(20)
-        .pool_timeout(10)
-        .concurrent_updates(8)
-        .post_init(on_startup)
-        .post_shutdown(on_shutdown)
-        .build()
-    )
-    application.bot_data["scheduler"] = scheduler
-    application.bot_data["started_at"] = datetime.now(timezone.utc)
-
-    register_handlers(application)
-    if WC_ENABLED:
-        register_wc_handlers(application)
-    register_fallback_handlers(application)
-    application.add_error_handler(on_error)
-
     if TELEGRAM_OWNER_USERNAME:
         logger.info("Owner gate enabled for @%s.", TELEGRAM_OWNER_USERNAME)
     else:
         logger.info("Owner gate enabled: first Telegram user who sends /start will claim the bot.")
 
-    logger.info("▶️  Bot bắt đầu polling...")
-    application.run_polling(
-        allowed_updates=["message", "callback_query"],
-        drop_pending_updates=False,
-    )
+    retry_delay = _RETRY_INITIAL_DELAY
+    attempt = 0
+
+    while True:
+        attempt += 1
+        scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+        application = _build_application(scheduler)
+
+        register_handlers(application)
+        if WC_ENABLED:
+            register_wc_handlers(application)
+        register_fallback_handlers(application)
+        application.add_error_handler(on_error)
+
+        try:
+            logger.info("▶️  Bot bắt đầu polling... (lần thử #%d)", attempt)
+            application.run_polling(
+                allowed_updates=["message", "callback_query"],
+                drop_pending_updates=False,
+            )
+            # run_polling() thoát bình thường (SIGTERM/SIGINT) → dừng hẳn
+            logger.info("👋 Bot dừng bình thường.")
+            break
+
+        except SystemExit as e:
+            # sys.exit() từ on_error (Conflict) hoặc lỗi config → thoát thật
+            logger.critical("Bot thoát với code %s, không retry.", e.code)
+            raise
+
+        except KeyboardInterrupt:
+            logger.info("👋 Bot dừng do Ctrl+C.")
+            break
+
+        except Exception as e:
+            # Mọi exception khác (NetworkError, crash, ...) → retry
+            logger.error(
+                "❌ Bot crash (lần #%d): %s – thử lại sau %ds...",
+                attempt, e, retry_delay,
+            )
+            time.sleep(retry_delay)
+            # Backoff có giới hạn: 5 → 10 → 20 → 40 → 60 → 60 → ...
+            retry_delay = min(retry_delay * 2, _RETRY_MAX_DELAY)
+            continue
+
+        # Reset delay khi chạy thành công một lúc
+        retry_delay = _RETRY_INITIAL_DELAY
 
 
 if __name__ == "__main__":

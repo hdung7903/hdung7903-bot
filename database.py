@@ -95,9 +95,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 # ── Events ────────────────────────────────────────────────────────────────────
 
-def upsert_event(event: dict) -> tuple[bool, bool]:
+def upsert_event(event: dict) -> tuple[bool, dict]:
     """
-    Upsert một sự kiện. Trả về (is_new, is_changed).
+    Upsert một sự kiện. Trả về (is_new, changes_dict).
+    changes_dict: {field: (old_val, new_val)} – rỗng nếu không có thay đổi.
     So sánh các trường quan trọng: subject, teacher, room, date, start_time, link.
     """
     with get_connection() as conn:
@@ -129,12 +130,12 @@ def upsert_event(event: dict) -> tuple[bool, bool]:
                     now,
                 ),
             )
-            return True, False
+            return True, {}
 
         # ── Kiểm tra thay đổi trên các trường quan trọng ─────────────────────
-        changed = _detect_change(existing, event)
+        changes = _detect_change(existing, event)
 
-        if changed:
+        if changes:
             conn.execute(
                 """UPDATE schedule_events
                    SET subject=?, teacher=?, room=?, session=?, date=?,
@@ -154,7 +155,18 @@ def upsert_event(event: dict) -> tuple[bool, bool]:
                     event["id"],
                 ),
             )
-        return False, changed
+            # Nếu ngày hoặc buổi thay đổi → xóa reminder cũ để gửi lại
+            if "date" in changes or "session" in changes:
+                conn.execute(
+                    "DELETE FROM notifications_sent WHERE event_id=? AND notif_type='reminder'",
+                    (event["id"],),
+                )
+                logger.info(
+                    "Reset reminder cho event %s do lịch đổi ngày/buổi: %s",
+                    event["id"],
+                    {k: v for k, v in changes.items() if k in ("date", "session")},
+                )
+        return False, changes
 
 
 def _find_legacy_event(conn: sqlite3.Connection, event: dict):
@@ -189,19 +201,23 @@ def _find_legacy_event(conn: sqlite3.Connection, event: dict):
     return None
 
 
-def _detect_change(existing, new: dict) -> bool:
-    """So sánh các trường quan trọng giữa bản ghi cũ và mới."""
-    WATCH_FIELDS = ["subject", "teacher", "room", "date", "start_time", "end_time", "link"]
+def _detect_change(existing, new: dict) -> dict:
+    """
+    So sánh các trường quan trọng giữa bản ghi cũ và mới.
+    Trả về dict {field: (old_val, new_val)} cho các trường thay đổi (rỗng = không đổi).
+    """
+    WATCH_FIELDS = ["subject", "teacher", "room", "session", "date", "start_time", "end_time", "link"]
+    changes: dict[str, tuple] = {}
     for field in WATCH_FIELDS:
-        old_val = existing[field] or ""
-        new_val = new.get(field) or ""
-        if str(old_val).strip() != str(new_val).strip():
+        old_val = str(existing[field] or "").strip()
+        new_val = str(new.get(field) or "").strip()
+        if old_val != new_val:
             logger.info(
                 "Change detected in event %s field '%s': %r → %r",
                 existing["id"], field, old_val, new_val
             )
-            return True
-    return False
+            changes[field] = (old_val, new_val)
+    return changes
 
 
 def get_upcoming_events(days: int = 7, include_approximate: bool = False) -> list[dict]:

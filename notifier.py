@@ -99,8 +99,52 @@ def build_new_event_message(event: dict) -> str:
     return f"🆕 <b>Lịch học mới được thêm!</b>\n\n{format_event(event)}"
 
 
-def build_changed_event_message(event: dict) -> str:
-    return f"✏️ <b>Lịch học vừa được cập nhật!</b>\n\n{format_event(event)}"
+_FIELD_LABEL = {
+    "date":       "📅 Ngày",
+    "session":    "⏰ Buổi",
+    "start_time": "🕐 Giờ bắt đầu",
+    "end_time":   "🕐 Giờ kết thúc",
+    "teacher":    "👨‍🏫 Giảng viên",
+    "room":       "🏫 Phòng",
+    "link":       "🔗 Link",
+    "subject":    "📚 Môn học",
+}
+_SESSION_LABEL_VN = {"sang": "Sáng", "chieu": "Chiều", "toi": "Tối"}
+
+
+def _fmt_change_val(field: str, val: str) -> str:
+    """Format giá trị thay đổi để hiển thị thân thiện hơn."""
+    if not val:
+        return "<i>(trống)</i>"
+    if field == "date":
+        return _fmt_date(val)
+    if field == "session":
+        return _SESSION_LABEL_VN.get(val, val)
+    return escape(val)
+
+
+def build_changed_event_message(event: dict, changes: dict | None = None) -> str:
+    """
+    Thông báo lịch học thay đổi, hiển thị rõ trường nào đổi và giá trị cũ → mới.
+    changes: {field: (old_val, new_val)} (từ db._detect_change).
+    """
+    # Phân loại: đổi ngày/buổi là quan trọng nhất
+    is_reschedule = changes and ("date" in changes or "session" in changes)
+    icon  = "⚠️" if is_reschedule else "✏️"
+    title = "⚠️ <b>Lịch học Bị ĐỔI NGÀY!</b>" if is_reschedule else "✏️ <b>Lịch học vừa được cập nhật!</b>"
+
+    lines = [title, "", format_event(event)]
+
+    if changes:
+        lines.append("")
+        lines.append("<b>Chi tiết thay đổi:</b>")
+        for field, (old_val, new_val) in changes.items():
+            label   = _FIELD_LABEL.get(field, field)
+            old_fmt = _fmt_change_val(field, old_val)
+            new_fmt = _fmt_change_val(field, new_val)
+            lines.append(f"  {label}: <s>{old_fmt}</s> → <b>{new_fmt}</b>")
+
+    return "\n".join(lines)
 
 
 def build_sync_report(new_count: int, changed_count: int, total: int) -> str:
@@ -116,12 +160,12 @@ def build_sync_report(new_count: int, changed_count: int, total: int) -> str:
 
 def build_sync_notification(
     new_events: list[dict],
-    changed_events: list[dict],
+    changed_events: list[tuple[dict, dict]],  # list of (event, changes_dict)
     total: int,
     gcal_synced: int = 0,
     gcal_failed: int = 0,
 ) -> str:
-    new_count = len(new_events)
+    new_count     = len(new_events)
     changed_count = len(changed_events)
 
     if new_count == 0 and changed_count == 0:
@@ -130,8 +174,14 @@ def build_sync_notification(
             f"Tổng hiện có: <b>{total}</b> buổi.",
         ]
     else:
+        # Kiểm tra có thay đổi ngày không
+        has_reschedule = any(
+            "date" in ch or "session" in ch
+            for _, ch in changed_events
+        )
+        header = "⚠️ <b>Có lịch học Bị ĐỔI!</b>" if has_reschedule else "🔄 <b>Lịch học vừa được cập nhật</b>"
         parts = [
-            "🔄 <b>Lịch học vừa được cập nhật</b>",
+            header,
             f"📊 Tổng: <b>{total}</b> buổi",
         ]
         if new_count:
@@ -139,13 +189,16 @@ def build_sync_notification(
         if changed_count:
             parts.append(f"✏️ Thay đổi: <b>{changed_count}</b> buổi")
 
-        preview_events = new_events[:5] + changed_events[:5]
-        if preview_events:
+        # Chi tiết tối đa 10 thay đổi
+        preview_new      = new_events[:5]
+        preview_changed  = changed_events[:5]
+        if preview_new or preview_changed:
             parts.append("\n<b>Chi tiết:</b>")
-            for event in preview_events[:10]:
-                marker = "🆕" if event in new_events else "✏️"
-                parts.append(f"\n{marker} {format_event(event)}")
-            remaining = new_count + changed_count - len(preview_events[:10])
+            for event in preview_new:
+                parts.append(f"\n🆕 {format_event(event)}")
+            for event, ch in preview_changed:
+                parts.append(f"\n{build_changed_event_message(event, ch)}")
+            remaining = new_count + changed_count - len(preview_new) - len(preview_changed)
             if remaining > 0:
                 parts.append(f"\n... và <b>{remaining}</b> thay đổi khác.")
 
