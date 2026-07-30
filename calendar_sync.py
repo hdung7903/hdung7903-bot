@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 _GCAL_SERVICE = None
 _GCAL_UNAVAILABLE_REASON = None
 _GCAL_CALENDAR_VALIDATED = False
+_GCAL_AUTH_ERROR = False          # True khi lỗi invalid_grant → cần token mới
 
 
 def _write_secret_json_if_needed(path: str, value: str, label: str) -> bool:
@@ -100,7 +101,15 @@ def _get_calendar_service():
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                logger.info("Google Calendar: access token hết hạn, đang tự động refresh...")
                 creds.refresh(Request())
+                # Lưu token mới vào file để lần sau dùng
+                token_dir = os.path.dirname(GOOGLE_TOKEN_FILE)
+                if token_dir:
+                    os.makedirs(token_dir, exist_ok=True)
+                with open(GOOGLE_TOKEN_FILE, "w") as f:
+                    f.write(creds.to_json())
+                logger.info("Google Calendar: token đã được refresh và lưu lại thành công.")
             else:
                 if not GOOGLE_ALLOW_LOCAL_OAUTH:
                     _GCAL_UNAVAILABLE_REASON = (
@@ -114,27 +123,30 @@ def _get_calendar_service():
                     GOOGLE_CREDENTIALS_FILE, GOOGLE_CALENDAR_SCOPES
                 )
                 creds = flow.run_local_server(port=0)
-            token_dir = os.path.dirname(GOOGLE_TOKEN_FILE)
-            if token_dir:
-                os.makedirs(token_dir, exist_ok=True)
-            with open(GOOGLE_TOKEN_FILE, "w") as f:
-                f.write(creds.to_json())
+                token_dir = os.path.dirname(GOOGLE_TOKEN_FILE)
+                if token_dir:
+                    os.makedirs(token_dir, exist_ok=True)
+                with open(GOOGLE_TOKEN_FILE, "w") as f:
+                    f.write(creds.to_json())
 
         _GCAL_SERVICE = build("calendar", "v3", credentials=creds)
+        _GCAL_AUTH_ERROR = False   # Reset nếu trước đó có lỗi nhưng giờ OK
         return _GCAL_SERVICE
     except ImportError:
         _GCAL_UNAVAILABLE_REASON = "Google Calendar libraries not installed"
         logger.warning("Google Calendar disabled: %s", _GCAL_UNAVAILABLE_REASON)
         return None
     except Exception as e:
+        global _GCAL_AUTH_ERROR
         _GCAL_UNAVAILABLE_REASON = str(e)
         err_str = str(e).lower()
-        # invalid_grant / token hết hạn là lỗi kỳ vọng khi chưa refresh token → WARNING
-        # để không bị error_reporter spam Telegram mỗi lần sync
+        # invalid_grant = refresh token bị thu hồi/hết hạn → cần tạo token mới thủ công
         if any(k in err_str for k in ("invalid_grant", "token_expired", "unauthorized",
                                       "invalid_client", "bad request")):
-            logger.warning("Google Calendar disabled (auth token expired): %s", e)
+            _GCAL_AUTH_ERROR = True
+            logger.warning("Google Calendar: refresh token hết hạn hoặc bị thu hồi: %s", e)
         else:
+            _GCAL_AUTH_ERROR = False
             logger.error("Google Calendar disabled: failed to get service: %s", e)
         return None
 
@@ -155,6 +167,41 @@ def _ensure_calendar_available(service) -> bool:
         )
         logger.error("Google Calendar disabled: %s Original error: %s", _GCAL_UNAVAILABLE_REASON, e)
         return False
+
+
+def is_gcal_auth_error() -> bool:
+    """Trả True khi GCal lỗi vì token hết hạn/bị thu hồi (cần tạo token mới)."""
+    return _GCAL_AUTH_ERROR
+
+
+def get_gcal_user_alert() -> str:
+    """
+    Trả về tin nhắn Telegram thân thiện khi GCal bị lỗi auth,
+    kèm hướng dẫn fix cụ thể.
+    """
+    return (
+        "⚠️ <b>Google Calendar bị mất kết nối!</b>\n\n"
+        "Token xác thực Google đã hết hạn hoặc bị thu hồi.\n"
+        "Lịch học <b>vẫn đồng bộ bình thường</b> trên bot, "
+        "chỉ Google Calendar không được cập nhật.\n\n"
+        "<b>Cách fix (5 phút):</b>\n"
+        "1. Mở PowerShell trong thư mục bot\n"
+        "2. Chạy: <code>python refresh_gcal_token.py</code>\n"
+        "3. Đăng nhập Google trên trình duyệt → Allow\n"
+        "4. Copy JSON token mới → cập nhật biến "
+        "<code>GOOGLE_TOKEN_JSON</code> trên Coolify\n"
+        "5. Redeploy → gõ <code>/gcal_status</code> kiểm tra\n\n"
+        "<i>Bot sẽ không báo lại lỗi này trong 24h tới.</i>"
+    )
+
+
+def reset_gcal_service() -> None:
+    """Reset service cache (dùng khi token được cập nhật từ bên ngoài)."""
+    global _GCAL_SERVICE, _GCAL_UNAVAILABLE_REASON, _GCAL_AUTH_ERROR, _GCAL_CALENDAR_VALIDATED
+    _GCAL_SERVICE = None
+    _GCAL_UNAVAILABLE_REASON = None
+    _GCAL_AUTH_ERROR = False
+    _GCAL_CALENDAR_VALIDATED = False
 
 
 def get_gcal_status(check_service: bool = False) -> dict:

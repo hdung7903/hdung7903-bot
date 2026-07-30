@@ -1,13 +1,18 @@
 import logging
 import asyncio
+import time
 from datetime import datetime
 
 import database as db
 from api_client import fetch_all_schedules
-from calendar_sync import sync_all_events
+from calendar_sync import sync_all_events, is_gcal_auth_error, get_gcal_user_alert
 from config import GOOGLE_CALENDAR_ENABLED, MANUAL_SCHEDULE_CLASS_ID
 
 logger = logging.getLogger(__name__)
+
+# Rate-limit noti GCal lỗi: chỉ gửi 1 lần / 24h để không spam
+_GCAL_ALERT_INTERVAL = 86400   # 24 giờ (giây)
+_last_gcal_alert_at: float = 0.0
 
 
 async def run_sync(bot=None, notify_changes: bool = True) -> dict:
@@ -64,6 +69,9 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     gcal_failed = 0
     if GOOGLE_CALENDAR_ENABLED:
         gcal_success, gcal_failed = await asyncio.to_thread(sync_all_events, events)
+        # Kiểm tra lỗi auth sau khi sync → noti người dùng (rate-limit 24h)
+        if bot and is_gcal_auth_error():
+            await _notify_gcal_auth_error(bot)
 
     # 4. Gửi thông báo Telegram về kết quả sync, kể cả khi không đổi
     if bot and notify_changes:
@@ -100,6 +108,18 @@ async def run_reminder_check(bot) -> int:
     if sent_count:
         logger.info("Sent %d reminder(s).", sent_count)
     return sent_count
+
+
+async def _notify_gcal_auth_error(bot) -> None:
+    """Gửi noti GCal token hết hạn, rate-limit 24h để không spam."""
+    global _last_gcal_alert_at
+    now = time.monotonic()
+    if now - _last_gcal_alert_at < _GCAL_ALERT_INTERVAL:
+        return  # Đã gửi trong 24h qua → bỏ qua
+    _last_gcal_alert_at = now
+    msg = get_gcal_user_alert()
+    await _broadcast(bot, msg)
+    logger.warning("Đã gửi cảnh báo GCal auth error tới người dùng.")
 
 
 async def _notify_sync_result(
