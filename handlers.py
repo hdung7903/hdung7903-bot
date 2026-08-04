@@ -253,15 +253,46 @@ async def cmd_ngay_mai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 @owner_required
 async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    loading = await update.message.reply_text("🔄 Đang đồng bộ lịch học...", parse_mode="HTML")
-    from sync_service import run_sync
-    result = await run_sync(bot=context.bot, notify_changes=False)
-    msg = build_sync_report(result["new"], result["changed"], result["total"])
+    running_task = context.application.bot_data.get("manual_sync_task")
+    if running_task and not running_task.done():
+        await update.message.reply_text(
+            "🔄 Một lượt đồng bộ thủ công đang chạy. Bot sẽ gửi kết quả khi xong.",
+        )
+        return
+
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(
+        "🔄 Đã bắt đầu đồng bộ nền. Bạn vẫn có thể dùng các lệnh khác; bot sẽ gửi kết quả khi xong.",
+    )
+    task = asyncio.create_task(_run_manual_sync(context.bot, chat_id, context.application))
+    context.application.bot_data["manual_sync_task"] = task
+
+
+async def _run_manual_sync(bot, chat_id: int, application) -> None:
+    """Chạy /sync ở background để không bị timeout bởi Google Calendar."""
     try:
-        await loading.delete()
+        from sync_service import run_sync
+
+        result = await run_sync(bot=bot, notify_changes=False)
+        if result["status"] == "fetch_failed":
+            from notifier import build_sync_fetch_failure_notification
+            message = build_sync_fetch_failure_notification()
+        else:
+            message = build_sync_report(result["new"], result["changed"], result["total"])
+            if result.get("gcal_synced") or result.get("gcal_failed"):
+                message += (
+                    f"\n\n📅 Google Calendar: <b>{result.get('gcal_synced', 0)}</b> synced"
+                    + (f", <b>{result['gcal_failed']}</b> lỗi" if result.get("gcal_failed") else "")
+                )
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML")
     except Exception:
-        pass
-    await update.message.reply_text(msg, parse_mode="HTML")
+        logger.exception("Manual schedule sync failed")
+        await bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Đồng bộ lịch học không hoàn tất. Bot đã ghi log lỗi để kiểm tra.",
+        )
+    finally:
+        application.bot_data.pop("manual_sync_task", None)
 
 
 @owner_required
