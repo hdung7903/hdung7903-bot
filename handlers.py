@@ -268,12 +268,17 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     last_sync = db.get_last_sync()
     users = db.get_subscribed_users()
+    chat_id = str(update.effective_chat.id)
+    is_subscribed = any(str(user["chat_id"]) == chat_id for user in users)
     total_events = len(db.get_all_events())
     upcoming = len(db.get_upcoming_events(days=7))
 
     sync_info = "Chưa đồng bộ lần nào"
     if last_sync:
-        sync_info = f"{last_sync['synced_at']} (tìm thấy {last_sync['events_found']} buổi)"
+        sync_info = (
+            f"{last_sync['synced_at']} "
+            f"({last_sync['status']}, tìm thấy {last_sync['events_found']} buổi)"
+        )
 
     text = (
         "📊 <b>Trạng thái Bot</b>\n\n"
@@ -281,6 +286,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"📚 Tổng buổi học trong DB: <b>{total_events}</b>\n"
         f"📅 Buổi học 7 ngày tới: <b>{upcoming}</b>\n"
         f"🔄 Lần đồng bộ cuối: <b>{sync_info}</b>\n"
+        f"📣 Thông báo đồng bộ: <b>{'đang bật' if is_subscribed else 'đang tắt'}</b>\n"
         f"⏰ Lịch đồng bộ: <b>0h, 7h, 12h, 17h</b> hàng ngày\n"
         f"🔔 Nhắc nhở: <b>24h trước lịch học</b>\n"
         f"📚 Lớp đang theo dõi:\n"

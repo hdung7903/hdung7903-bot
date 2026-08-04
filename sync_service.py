@@ -27,9 +27,11 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     total = len(events)
 
     if total == 0:
-        logger.warning("No events fetched from API.")
-        db.log_sync("ALL", 0, 0, 0, "empty")
-        return {"total": 0, "new": 0, "changed": 0, "status": "empty"}
+        logger.error("Schedule fetch returned no events; keeping the existing schedule unchanged.")
+        db.log_sync("ALL", 0, 0, 0, "fetch_failed")
+        if bot and notify_changes:
+            await _notify_sync_fetch_failure(bot)
+        return {"total": 0, "new": 0, "changed": 0, "status": "fetch_failed"}
 
     # 2. Upsert vào DB và phát hiện thay đổi
     new_events = []
@@ -142,6 +144,13 @@ async def _notify_sync_result(
     await _broadcast(bot, msg)
 
 
+async def _notify_sync_fetch_failure(bot) -> None:
+    """Báo rõ khi API lịch học không trả dữ liệu, thay vì im lặng."""
+    from notifier import build_sync_fetch_failure_notification
+
+    await _broadcast(bot, build_sync_fetch_failure_notification())
+
+
 async def _broadcast(bot, message: str) -> bool:
     """Gửi tin nhắn đến tất cả user đã đăng ký."""
     users = db.get_subscribed_users()
@@ -151,13 +160,19 @@ async def _broadcast(bot, message: str) -> bool:
 
     success = False
     for user in users:
-        try:
-            await bot.send_message(
-                chat_id=user["chat_id"],
-                text=message,
-                parse_mode="HTML",
-            )
-            success = True
-        except Exception as e:
-            logger.error("Failed to send message to %s: %s", user["chat_id"], e)
+        for attempt in range(1, 4):
+            try:
+                await bot.send_message(
+                    chat_id=user["chat_id"],
+                    text=message,
+                    parse_mode="HTML",
+                )
+                success = True
+                break
+            except Exception as e:
+                if attempt == 3:
+                    logger.error("Failed to send message to %s after 3 attempts: %s", user["chat_id"], e)
+                    break
+                logger.warning("Notification send attempt %d/3 failed for %s: %s", attempt, user["chat_id"], e)
+                await asyncio.sleep(attempt)
     return success

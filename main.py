@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Bot, BotCommand
@@ -40,6 +41,19 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 VN_TZ = timezone(timedelta(hours=7))
+
+
+def _on_scheduler_event(event) -> None:
+    """Ghi rõ job bị bỏ lỡ/crash để error reporter gửi alert lên Telegram."""
+    if event.code == EVENT_JOB_MISSED:
+        logger.error("Scheduler missed job %s scheduled at %s", event.job_id, event.scheduled_run_time)
+        return
+    logger.error(
+        "Scheduler job %s crashed: %s\n%s",
+        event.job_id,
+        event.exception,
+        event.traceback or "",
+    )
 
 
 # ── Jobs: Lịch học ────────────────────────────────────────────────────────────
@@ -206,6 +220,7 @@ async def on_startup(application: Application) -> None:
 
     bot = application.bot
     scheduler: AsyncIOScheduler = application.bot_data["scheduler"]
+    scheduler.add_listener(_on_scheduler_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
     me = await bot.get_me()
     logger.info("🤖 Telegram bot identity: @%s (id=%s)", me.username, me.id)
     await bot.set_my_commands(_build_bot_commands())
@@ -226,6 +241,7 @@ async def on_startup(application: Application) -> None:
         job_sync_schedule,
         trigger=CronTrigger(hour=hours_str, minute=0, timezone=TIMEZONE),
         args=[bot], id="sync_schedule", replace_existing=True,
+        coalesce=True, misfire_grace_time=7200, max_instances=1,
     )
     # Nhắc nhở lịch học mỗi 30 phút (để không bỏ lỡ cửa sổ nhắc)
     scheduler.add_job(

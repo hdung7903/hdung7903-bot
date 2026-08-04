@@ -75,7 +75,7 @@ def _materialize_google_secrets() -> bool:
 
 
 def _get_calendar_service():
-    global _GCAL_SERVICE, _GCAL_UNAVAILABLE_REASON
+    global _GCAL_SERVICE, _GCAL_UNAVAILABLE_REASON, _GCAL_AUTH_ERROR
     if _GCAL_SERVICE is not None:
         return _GCAL_SERVICE
     if _GCAL_UNAVAILABLE_REASON:
@@ -137,7 +137,6 @@ def _get_calendar_service():
         logger.warning("Google Calendar disabled: %s", _GCAL_UNAVAILABLE_REASON)
         return None
     except Exception as e:
-        global _GCAL_AUTH_ERROR
         _GCAL_UNAVAILABLE_REASON = str(e)
         err_str = str(e).lower()
         # invalid_grant = refresh token bị thu hồi/hết hạn → cần tạo token mới thủ công

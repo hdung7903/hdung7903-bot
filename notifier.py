@@ -158,6 +158,14 @@ def build_sync_report(new_count: int, changed_count: int, total: int) -> str:
     return "\n".join(parts)
 
 
+def build_sync_fetch_failure_notification() -> str:
+    return (
+        "⚠️ <b>Chưa thể đồng bộ lịch học</b>\n\n"
+        "API lịch học không trả dữ liệu. Bot giữ nguyên lịch đã lưu trước đó "
+        "và sẽ tự thử lại ở lần đồng bộ tiếp theo."
+    )
+
+
 def build_sync_notification(
     new_events: list[dict],
     changed_events: list[tuple[dict, dict]],  # list of (event, changes_dict)
