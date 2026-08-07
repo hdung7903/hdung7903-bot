@@ -294,13 +294,15 @@ _NET_LOG_MAX_INTERVAL = 600         # Sau đó: log tối đa mỗi 10 phút
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     global _net_down_since, _net_last_log
 
-    # Conflict: 2 instance bot cùng chạy → tự thoát ngay
+    # Conflict thường xảy ra ngắn hạn khi Coolify vừa thay container: request
+    # getUpdates dài của instance cũ chưa kịp kết thúc. Không tự thoát process,
+    # vì sẽ làm deployment rơi vào restart loop; PTB sẽ retry polling.
     if isinstance(context.error, Conflict):
-        logger.critical(
-            "💀 Phát hiện 2 instance bot cùng chạy! Tự thoát để tránh xung đột.\n"
-            "Kiểm tra: docker ps | grep bot"
+        logger.warning(
+            "Telegram polling conflict: một instance khác vừa/đang polling. "
+            "Giữ process chạy và chờ polling retry."
         )
-        sys.exit(1)
+        return
 
     # Lỗi mạng/kết nối – không cần traceback
     is_network_err = isinstance(
