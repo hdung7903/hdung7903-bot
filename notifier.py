@@ -172,6 +172,7 @@ def build_sync_notification(
     total: int,
     gcal_synced: int = 0,
     gcal_failed: int = 0,
+    gcal_deleted: int = 0,
 ) -> str:
     new_count     = len(new_events)
     changed_count = len(changed_events)
@@ -214,6 +215,7 @@ def build_sync_notification(
         parts.append(
             f"\n📅 Google Calendar: <b>{gcal_synced}</b> synced"
             + (f", <b>{gcal_failed}</b> lỗi" if gcal_failed else "")
+            + (f", đã xóa <b>{gcal_deleted}</b> lịch cũ" if gcal_deleted else "")
         )
 
     return "\n".join(parts)

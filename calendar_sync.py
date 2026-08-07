@@ -355,14 +355,73 @@ def sync_event_to_gcal(event: dict, service=None) -> bool:
         return False
 
 
-def sync_all_events(events: list[dict]) -> tuple[int, int]:
+def _delete_stale_gcal_events(service, events: list[dict]) -> tuple[int, int]:
+    """
+    Xóa event cũ/duplicate do bot tạo nhưng không còn trong lịch nguồn.
+
+    Chỉ đụng vào event mang private extended properties của bot; event do người
+    dùng tự tạo trên Google Calendar không bao giờ bị ảnh hưởng.
+    """
+    current_ids_by_class: dict[str, set[str]] = {}
+    for event in events:
+        if not event.get("date"):
+            continue
+        current_ids_by_class.setdefault(event["class_id"], set()).add(event["id"])
+
+    deleted = 0
+    failed = 0
+    for class_id, current_ids in current_ids_by_class.items():
+        page_token = None
+        seen_ids: set[str] = set()
+        while True:
+            try:
+                result = service.events().list(
+                    calendarId=GOOGLE_CALENDAR_ID,
+                    privateExtendedProperty=f"class_id={class_id}",
+                    maxResults=250,
+                    pageToken=page_token,
+                    fields="items(id,extendedProperties),nextPageToken",
+                ).execute()
+            except Exception as e:
+                logger.error("Failed to list GCal events for cleanup class %s: %s", class_id, e)
+                failed += 1
+                break
+
+            for gcal_event in result.get("items", []):
+                props = (gcal_event.get("extendedProperties") or {}).get("private") or {}
+                bot_event_id = props.get("bot_event_id")
+                should_delete = not bot_event_id or bot_event_id not in current_ids
+                is_duplicate = bot_event_id in seen_ids if bot_event_id else False
+                if not should_delete and not is_duplicate:
+                    seen_ids.add(bot_event_id)
+                    continue
+
+                try:
+                    service.events().delete(
+                        calendarId=GOOGLE_CALENDAR_ID,
+                        eventId=gcal_event["id"],
+                    ).execute()
+                    deleted += 1
+                    reason = "duplicate" if is_duplicate else "stale"
+                    logger.info("Deleted %s GCal event %s for class %s", reason, gcal_event["id"], class_id)
+                except Exception as e:
+                    logger.error("Failed to delete GCal event %s: %s", gcal_event.get("id"), e)
+                    failed += 1
+
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+    return deleted, failed
+
+
+def sync_all_events(events: list[dict]) -> tuple[int, int, int]:
     if not GOOGLE_CALENDAR_ENABLED:
-        return 0, 0
+        return 0, 0, 0
     service = _get_calendar_service()
     if not service:
-        return 0, 0
+        return 0, 0, 0
     if not _ensure_calendar_available(service):
-        return 0, len(events)
+        return 0, len(events), 0
     success, fail = 0, 0
     for event in events:
         if not event.get("date"):
@@ -372,4 +431,10 @@ def sync_all_events(events: list[dict]) -> tuple[int, int]:
             success += 1
         else:
             fail += 1
-    return success, fail
+
+    if fail:
+        logger.warning("Skipped GCal stale-event cleanup because %d sync operation(s) failed.", fail)
+        return success, fail, 0
+
+    deleted, cleanup_failed = _delete_stale_gcal_events(service, events)
+    return success, cleanup_failed, deleted

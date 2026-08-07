@@ -283,6 +283,7 @@ async def _run_manual_sync(bot, chat_id: int, application) -> None:
                 message += (
                     f"\n\n📅 Google Calendar: <b>{result.get('gcal_synced', 0)}</b> synced"
                     + (f", <b>{result['gcal_failed']}</b> lỗi" if result.get("gcal_failed") else "")
+                    + (f", đã xóa <b>{result['gcal_deleted']}</b> lịch cũ" if result.get("gcal_deleted") else "")
                 )
         await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML")
     except Exception:

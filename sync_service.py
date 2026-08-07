@@ -69,15 +69,16 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     # credentials thì sau khi bật lại vẫn đẩy được các lịch đã tồn tại trong DB.
     gcal_success = 0
     gcal_failed = 0
+    gcal_deleted = 0
     if GOOGLE_CALENDAR_ENABLED:
-        gcal_success, gcal_failed = await asyncio.to_thread(sync_all_events, events)
+        gcal_success, gcal_failed, gcal_deleted = await asyncio.to_thread(sync_all_events, events)
         # Kiểm tra lỗi auth sau khi sync → noti người dùng (rate-limit 24h)
         if bot and is_gcal_auth_error():
             await _notify_gcal_auth_error(bot)
 
     # 4. Gửi thông báo Telegram về kết quả sync, kể cả khi không đổi
     if bot and notify_changes:
-        await _notify_sync_result(bot, new_events, changed_events, total, gcal_success, gcal_failed)
+        await _notify_sync_result(bot, new_events, changed_events, total, gcal_success, gcal_failed, gcal_deleted)
 
     # 5. Log sync
     db.log_sync("ALL", total, len(new_events), len(changed_events), "ok")
@@ -88,6 +89,7 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
         "changed": len(changed_events),
         "gcal_synced": gcal_success,
         "gcal_failed": gcal_failed,
+        "gcal_deleted": gcal_deleted,
         "status": "ok",
     }
 
@@ -131,6 +133,7 @@ async def _notify_sync_result(
     total: int,
     gcal_success: int = 0,
     gcal_failed: int = 0,
+    gcal_deleted: int = 0,
 ) -> None:
     from notifier import build_sync_notification
 
@@ -140,6 +143,7 @@ async def _notify_sync_result(
         total,
         gcal_synced=gcal_success,
         gcal_failed=gcal_failed,
+        gcal_deleted=gcal_deleted,
     )
     await _broadcast(bot, msg)
 
