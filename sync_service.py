@@ -15,6 +15,28 @@ _GCAL_ALERT_INTERVAL = 86400   # 24 giờ (giây)
 _last_gcal_alert_at: float = 0.0
 
 
+def _normalize_subject(subject: str | None) -> str:
+    """Tạo khóa so sánh tên môn giữa nguồn API và lịch thủ công."""
+    return " ".join((subject or "").casefold().split())
+
+
+def _prefer_api_events(events: list[dict]) -> tuple[list[dict], int]:
+    """Ưu tiên lịch API khi nó đã có cùng môn với một event thủ công.
+
+    Lịch thủ công vẫn là fallback cho các môn API chưa trả về. Khi API đã có
+    lịch chính thức, giữ cả hai sẽ tạo event trùng hoặc giữ lại ngày cũ.
+    """
+    api_events = [event for event in events if event.get("class_id") != MANUAL_SCHEDULE_CLASS_ID]
+    manual_events = [event for event in events if event.get("class_id") == MANUAL_SCHEDULE_CLASS_ID]
+    api_subjects = {_normalize_subject(event.get("subject")) for event in api_events}
+    active_manual_events = [
+        event
+        for event in manual_events
+        if _normalize_subject(event.get("subject")) not in api_subjects
+    ]
+    return api_events + active_manual_events, len(manual_events) - len(active_manual_events)
+
+
 async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     """
     Chạy chu trình đồng bộ đầy đủ.
@@ -23,8 +45,15 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     logger.info("Starting schedule sync at %s", datetime.now().isoformat())
 
     # 1. Fetch từ API + lịch thủ công JSON
-    events = await fetch_all_schedules()
+    fetched_events = await fetch_all_schedules()
+    events, overridden_manual_count = _prefer_api_events(fetched_events)
     total = len(events)
+
+    if overridden_manual_count:
+        logger.info(
+            "API schedule overrides %d manual event(s) with the same subject.",
+            overridden_manual_count,
+        )
 
     if total == 0:
         logger.error("Schedule fetch returned no events; keeping the existing schedule unchanged.")
@@ -56,11 +85,10 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
 
     # 2b. Reconcile lịch thủ công: xóa event cũ không còn trong JSON mới
     manual_events = [e for e in events if e.get("class_id") == MANUAL_SCHEDULE_CLASS_ID]
-    if manual_events:
-        current_manual_ids = {e["id"] for e in manual_events}
-        deleted = db.delete_stale_events_for_class(MANUAL_SCHEDULE_CLASS_ID, current_manual_ids)
-        if deleted:
-            logger.info("Reconcile: đã xóa %d lịch thủ công không còn trong JSON", deleted)
+    current_manual_ids = {e["id"] for e in manual_events}
+    deleted = db.delete_stale_events_for_class(MANUAL_SCHEDULE_CLASS_ID, current_manual_ids)
+    if deleted:
+        logger.info("Reconcile: đã xóa %d lịch thủ công không còn hiệu lực", deleted)
 
     logger.info("Sync result: total=%d, new=%d, changed=%d", total, len(new_events), len(changed_events))
 
@@ -71,7 +99,11 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     gcal_failed = 0
     gcal_deleted = 0
     if GOOGLE_CALENDAR_ENABLED:
-        gcal_success, gcal_failed, gcal_deleted = await asyncio.to_thread(sync_all_events, events)
+        gcal_success, gcal_failed, gcal_deleted = await asyncio.to_thread(
+            sync_all_events,
+            events,
+            cleanup_class_ids={MANUAL_SCHEDULE_CLASS_ID},
+        )
         # Kiểm tra lỗi auth sau khi sync → noti người dùng (rate-limit 24h)
         if bot and is_gcal_auth_error():
             await _notify_gcal_auth_error(bot)

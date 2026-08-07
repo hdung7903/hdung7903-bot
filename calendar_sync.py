@@ -355,7 +355,11 @@ def sync_event_to_gcal(event: dict, service=None) -> bool:
         return False
 
 
-def _delete_stale_gcal_events(service, events: list[dict]) -> tuple[int, int]:
+def _delete_stale_gcal_events(
+    service,
+    events: list[dict],
+    cleanup_class_ids: set[str] | None = None,
+) -> tuple[int, int]:
     """
     Xóa event cũ/duplicate do bot tạo nhưng không còn trong lịch nguồn.
 
@@ -367,6 +371,11 @@ def _delete_stale_gcal_events(service, events: list[dict]) -> tuple[int, int]:
         if not event.get("date"):
             continue
         current_ids_by_class.setdefault(event["class_id"], set()).add(event["id"])
+
+    # Một nguồn có thể không còn event nào sau khi được nguồn khác thay thế.
+    # Vẫn phải quét class đó để xóa các event cũ do bot tạo trên Google Calendar.
+    for class_id in cleanup_class_ids or set():
+        current_ids_by_class.setdefault(class_id, set())
 
     deleted = 0
     failed = 0
@@ -414,7 +423,10 @@ def _delete_stale_gcal_events(service, events: list[dict]) -> tuple[int, int]:
     return deleted, failed
 
 
-def sync_all_events(events: list[dict]) -> tuple[int, int, int]:
+def sync_all_events(
+    events: list[dict],
+    cleanup_class_ids: set[str] | None = None,
+) -> tuple[int, int, int]:
     if not GOOGLE_CALENDAR_ENABLED:
         return 0, 0, 0
     service = _get_calendar_service()
@@ -436,5 +448,9 @@ def sync_all_events(events: list[dict]) -> tuple[int, int, int]:
         logger.warning("Skipped GCal stale-event cleanup because %d sync operation(s) failed.", fail)
         return success, fail, 0
 
-    deleted, cleanup_failed = _delete_stale_gcal_events(service, events)
+    deleted, cleanup_failed = _delete_stale_gcal_events(
+        service,
+        events,
+        cleanup_class_ids=cleanup_class_ids,
+    )
     return success, cleanup_failed, deleted
