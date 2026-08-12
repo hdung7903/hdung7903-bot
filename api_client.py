@@ -450,8 +450,12 @@ def parse_schedule_response(class_id: str, data) -> list[dict]:
 #  Fetch functions
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def fetch_schedule(class_id: str) -> list[dict]:
-    """Gọi API và trả về danh sách events đã parse. Tự động retry 2 lần nếu lỗi mạng."""
+async def fetch_schedule(class_id: str) -> list[dict] | None:
+    """Gọi API và trả về events; ``None`` nghĩa là fetch thất bại.
+
+    Phân biệt ``None`` với danh sách rỗng là cần thiết: lịch rỗng hợp lệ phải
+    được reconcile, còn lỗi API thì tuyệt đối không được xóa lịch đã lưu.
+    """
     payload = {"class_id": class_id}
     logger.info("Fetching schedule for class_id=%s", class_id)
     last_err: Exception | None = None
@@ -489,20 +493,24 @@ async def fetch_schedule(class_id: str) -> list[dict]:
     if last_err is not None:
         logger.error("Không kết nối được API lịch học sau 3 lần thử (class_id=%s): %s",
                      class_id, last_err)
-    return []
+    return None
 
 
 
-async def fetch_all_schedules() -> list[dict]:
-    """Fetch lịch học cho tất cả class_id (API + lịch thủ công JSON), deduplicate theo event id."""
+async def fetch_all_schedule_sources() -> tuple[list[dict], set[str], set[str]]:
+    """Fetch lịch và trả về events, các lớp thành công, các lớp lỗi."""
     tasks = [fetch_schedule(cid) for cid in CLASS_IDS]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     all_events: list[dict] = []
+    successful_class_ids: set[str] = set()
+    failed_class_ids: set[str] = set()
     for cid, result in zip(CLASS_IDS, results):
-        if isinstance(result, Exception):
+        if isinstance(result, Exception) or result is None:
+            failed_class_ids.add(cid)
             logger.error("Error fetching %s: %s", cid, result)
         else:
+            successful_class_ids.add(cid)
             all_events.extend(result)
 
     # Thêm lịch thủ công từ file JSON
@@ -515,7 +523,13 @@ async def fetch_all_schedules() -> list[dict]:
         if e["id"] not in seen:
             seen.add(e["id"])
             unique.append(e)
-    return unique
+    return unique, successful_class_ids, failed_class_ids
+
+
+async def fetch_all_schedules() -> list[dict]:
+    """Compatibility wrapper cho các nơi chỉ cần danh sách events."""
+    events, _, _ = await fetch_all_schedule_sources()
+    return events
 
 
 def fetch_manual_schedules() -> list[dict]:

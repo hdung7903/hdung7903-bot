@@ -276,25 +276,33 @@ def get_event_ids_for_class(class_id: str) -> set[str]:
     return {row["id"] for row in rows}
 
 
+def reconcile_stale_events_for_class(class_id: str, current_ids: set[str]) -> list[dict]:
+    """Xóa event không còn trong snapshot nguồn và trả lại các event đã xóa."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM schedule_events WHERE class_id = ?", (class_id,)
+        ).fetchall()
+        stale_rows = [row for row in rows if row["id"] not in current_ids]
+        if not stale_rows:
+            return []
+        for row in stale_rows:
+            conn.execute("DELETE FROM schedule_events WHERE id = ?", (row["id"],))
+            conn.execute(
+                "DELETE FROM notifications_sent WHERE event_id = ?", (row["id"],)
+            )
+        conn.commit()
+    deleted = [dict(row) for row in stale_rows]
+    logger.info("Deleted %d stale events for class_id=%s", len(deleted), class_id)
+    return deleted
+
+
 def delete_stale_events_for_class(class_id: str, current_ids: set[str]) -> int:
     """
     Xóa các events trong DB thuộc class_id nhưng không còn trong current_ids.
     Trả về số events đã xóa.
     Dùng cho reconcile lịch thủ công: nếu xóa 1 mục khỏi JSON → tự xóa khỏi DB.
     """
-    existing = get_event_ids_for_class(class_id)
-    stale = existing - current_ids
-    if not stale:
-        return 0
-    with get_connection() as conn:
-        for eid in stale:
-            conn.execute("DELETE FROM schedule_events WHERE id = ?", (eid,))
-            conn.execute(
-                "DELETE FROM notifications_sent WHERE event_id = ?", (eid,)
-            )
-        conn.commit()
-    logger.info("Deleted %d stale events for class_id=%s", len(stale), class_id)
-    return len(stale)
+    return len(reconcile_stale_events_for_class(class_id, current_ids))
 
 
 # ── Notifications ─────────────────────────────────────────────────────────────

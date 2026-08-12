@@ -278,7 +278,18 @@ async def _run_manual_sync(bot, chat_id: int, application) -> None:
             from notifier import build_sync_fetch_failure_notification
             message = build_sync_fetch_failure_notification()
         else:
-            message = build_sync_report(result["new"], result["changed"], result["total"])
+            message = build_sync_report(
+                result["new"],
+                result["changed"],
+                result["total"],
+                deleted_count=result.get("deleted", 0),
+            )
+            if result.get("failed_classes"):
+                message += (
+                    "\n\n⚠️ API chưa trả dữ liệu cho: <code>"
+                    + ", ".join(result["failed_classes"])
+                    + "</code>. Không kết luận lịch như cũ."
+                )
             if result.get("gcal_synced") or result.get("gcal_failed"):
                 message += (
                     f"\n\n📅 Google Calendar: <b>{result.get('gcal_synced', 0)}</b> synced"

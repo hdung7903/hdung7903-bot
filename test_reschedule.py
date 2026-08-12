@@ -202,6 +202,25 @@ check("Sau đổi ngày: is_notification_sent=False (đã reset)",
       "BUG CRITICAL: reminder không reset → sẽ miss buổi học!")
 
 # ══════════════════════════════════════════════════════════════════════════════
+section("10. Reconcile – API xóa lịch phải được thông báo")
+# ══════════════════════════════════════════════════════════════════════════════
+ev_removed = make_event(event_id="ev_removed", date="2026-08-30", subject="Buổi bị hủy")
+db.upsert_event(ev_removed)
+deleted_events = db.reconcile_stale_events_for_class("TEST-CLASS", set())
+check("Event không còn trong API bị xóa khỏi DB", len(deleted_events) > 0)
+check("Thông báo sync nêu rõ lịch bị hủy/xóa",
+      "Lịch đã bị hủy/xóa" in notifier.build_sync_notification([], [], 0, deleted_events=deleted_events))
+
+# ══════════════════════════════════════════════════════════════════════════════
+section("11. API lỗi một phần – không báo lịch như cũ")
+# ══════════════════════════════════════════════════════════════════════════════
+partial_failure_msg = notifier.build_sync_notification(
+    [], [], 10, failed_classes={"TEST-CLASS"}
+)
+check("API lỗi một phần có cảnh báo", "Đồng bộ chưa hoàn tất" in partial_failure_msg)
+check("API lỗi một phần không nói lịch như cũ", "Lịch học như cũ" not in partial_failure_msg)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Kết quả tổng hợp
 # ══════════════════════════════════════════════════════════════════════════════
 print(f"\n{'='*60}")

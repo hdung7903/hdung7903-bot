@@ -15,7 +15,7 @@ services:
 
       # ── Cấu hình ──────────────────────────────────
       - TIMEZONE=${TIMEZONE:-Asia/Ho_Chi_Minh}
-      - SYNC_HOURS=${SYNC_HOURS:-0,7,12,17}
+      - SYNC_HOURS=${SYNC_HOURS:-0,5,7,12,17}
       - NOTIFY_BEFORE_HOURS=${NOTIFY_BEFORE_HOURS:-24}
       - DATABASE_PATH=${DATABASE_PATH:-/app/data/schedule.db}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}

@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 import database as db
-from api_client import fetch_all_schedules
+from api_client import fetch_all_schedule_sources
 from calendar_sync import sync_all_events, is_gcal_auth_error, get_gcal_user_alert
 from config import GOOGLE_CALENDAR_ENABLED, MANUAL_SCHEDULE_CLASS_ID
 
@@ -45,7 +45,7 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
     logger.info("Starting schedule sync at %s", datetime.now().isoformat())
 
     # 1. Fetch từ API + lịch thủ công JSON
-    fetched_events = await fetch_all_schedules()
+    fetched_events, successful_api_classes, failed_api_classes = await fetch_all_schedule_sources()
     events, overridden_manual_count = _prefer_api_events(fetched_events)
     total = len(events)
 
@@ -55,7 +55,7 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
             overridden_manual_count,
         )
 
-    if total == 0:
+    if total == 0 and not successful_api_classes:
         logger.error("Schedule fetch returned no events; keeping the existing schedule unchanged.")
         db.log_sync("ALL", 0, 0, 0, "fetch_failed")
         if bot and notify_changes:
@@ -83,12 +83,25 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
             _seen_changed.add(lesson_key)
             changed_events.append((event, changes))
 
-    # 2b. Reconcile lịch thủ công: xóa event cũ không còn trong JSON mới
+    # 2b. Reconcile snapshot từng nguồn. Chỉ dọn lớp API đã fetch thành công;
+    # nếu API lỗi thì giữ nguyên lịch cũ và báo rõ, không báo "như cũ".
+    deleted_events: list[dict] = []
     manual_events = [e for e in events if e.get("class_id") == MANUAL_SCHEDULE_CLASS_ID]
     current_manual_ids = {e["id"] for e in manual_events}
-    deleted = db.delete_stale_events_for_class(MANUAL_SCHEDULE_CLASS_ID, current_manual_ids)
-    if deleted:
-        logger.info("Reconcile: đã xóa %d lịch thủ công không còn hiệu lực", deleted)
+    deleted_events.extend(
+        db.reconcile_stale_events_for_class(MANUAL_SCHEDULE_CLASS_ID, current_manual_ids)
+    )
+    for class_id in successful_api_classes:
+        current_ids = {
+            event["id"]
+            for event in events
+            if event.get("class_id") == class_id
+        }
+        deleted_events.extend(db.reconcile_stale_events_for_class(class_id, current_ids))
+    if deleted_events:
+        logger.info("Reconcile: đã xóa %d lịch không còn trong nguồn", len(deleted_events))
+    if failed_api_classes:
+        logger.warning("Schedule API unavailable for class(es): %s", sorted(failed_api_classes))
 
     logger.info("Sync result: total=%d, new=%d, changed=%d", total, len(new_events), len(changed_events))
 
@@ -102,7 +115,7 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
         gcal_success, gcal_failed, gcal_deleted = await asyncio.to_thread(
             sync_all_events,
             events,
-            cleanup_class_ids={MANUAL_SCHEDULE_CLASS_ID},
+            cleanup_class_ids={MANUAL_SCHEDULE_CLASS_ID, *successful_api_classes},
         )
         # Kiểm tra lỗi auth sau khi sync → noti người dùng (rate-limit 24h)
         if bot and is_gcal_auth_error():
@@ -110,15 +123,27 @@ async def run_sync(bot=None, notify_changes: bool = True) -> dict:
 
     # 4. Gửi thông báo Telegram về kết quả sync, kể cả khi không đổi
     if bot and notify_changes:
-        await _notify_sync_result(bot, new_events, changed_events, total, gcal_success, gcal_failed, gcal_deleted)
+        await _notify_sync_result(
+            bot,
+            new_events,
+            changed_events,
+            deleted_events,
+            total,
+            gcal_success,
+            gcal_failed,
+            gcal_deleted,
+            failed_api_classes,
+        )
 
     # 5. Log sync
-    db.log_sync("ALL", total, len(new_events), len(changed_events), "ok")
+    db.log_sync("ALL", total, len(new_events), len(changed_events) + len(deleted_events), "ok")
 
     return {
         "total": total,
         "new": len(new_events),
         "changed": len(changed_events),
+        "deleted": len(deleted_events),
+        "failed_classes": sorted(failed_api_classes),
         "gcal_synced": gcal_success,
         "gcal_failed": gcal_failed,
         "gcal_deleted": gcal_deleted,
@@ -162,20 +187,24 @@ async def _notify_sync_result(
     bot,
     new_events: list,
     changed_events: list,
+    deleted_events: list,
     total: int,
     gcal_success: int = 0,
     gcal_failed: int = 0,
     gcal_deleted: int = 0,
+    failed_classes: set[str] | None = None,
 ) -> None:
     from notifier import build_sync_notification
 
     msg = build_sync_notification(
         new_events,
         changed_events,
-        total,
+        total=total,
+        deleted_events=deleted_events,
         gcal_synced=gcal_success,
         gcal_failed=gcal_failed,
         gcal_deleted=gcal_deleted,
+        failed_classes=failed_classes,
     )
     await _broadcast(bot, msg)
 

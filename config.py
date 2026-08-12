@@ -70,7 +70,7 @@ GOOGLE_ALLOW_LOCAL_OAUTH   = os.getenv("GOOGLE_ALLOW_LOCAL_OAUTH", "false").lowe
 
 # ── Cron schedule ─────────────────────────────────────────────────────────────
 # Giờ chạy đồng bộ lịch (UTC+7 → server dùng giờ địa phương nếu TZ=Asia/Ho_Chi_Minh)
-SYNC_HOURS = [int(h) for h in os.getenv("SYNC_HOURS", "0,7,12,17").split(",")]
+SYNC_HOURS = [int(h) for h in os.getenv("SYNC_HOURS", "0,5,7,12,17").split(",")]
 
 # Nhắc nhở trước bao nhiêu giờ (mặc định 24h = 1 ngày)
 NOTIFY_BEFORE_HOURS = int(os.getenv("NOTIFY_BEFORE_HOURS", "24"))

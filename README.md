@@ -198,7 +198,7 @@ telegram/
 | `TELEGRAM_BOT_TOKEN` | *bắt buộc* | Token từ @BotFather |
 | `TELEGRAM_OWNER_USERNAME` | trống | Username được phép claim bot; để trống thì user đầu tiên `/start` sẽ claim |
 | `CLASS_IDS` | `TA01.NVSPTH.QY01,...` | Danh sách lớp học |
-| `SYNC_HOURS` | `0,7,12,17` | Giờ đồng bộ hàng ngày |
+| `SYNC_HOURS` | `0,5,7,12,17` | Giờ đồng bộ hàng ngày |
 | `NOTIFY_BEFORE_HOURS` | `24` | Nhắc trước N giờ |
 | `TIMEZONE` | `Asia/Ho_Chi_Minh` | Múi giờ |
 | `WC_ENABLED` | `true` | Bật module World Cup 2026 |

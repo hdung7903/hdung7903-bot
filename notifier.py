@@ -147,14 +147,16 @@ def build_changed_event_message(event: dict, changes: dict | None = None) -> str
     return "\n".join(lines)
 
 
-def build_sync_report(new_count: int, changed_count: int, total: int) -> str:
-    if new_count == 0 and changed_count == 0:
+def build_sync_report(new_count: int, changed_count: int, total: int, deleted_count: int = 0) -> str:
+    if new_count == 0 and changed_count == 0 and deleted_count == 0:
         return f"✅ Đồng bộ xong. Tổng <b>{total}</b> buổi học. Không có thay đổi."
     parts = [f"🔄 <b>Đồng bộ lịch học hoàn tất!</b>", f"📊 Tổng: <b>{total}</b> buổi"]
     if new_count:
         parts.append(f"🆕 Mới: <b>{new_count}</b> buổi")
     if changed_count:
         parts.append(f"✏️ Thay đổi: <b>{changed_count}</b> buổi")
+    if deleted_count:
+        parts.append(f"🗑 Đã hủy/xóa: <b>{deleted_count}</b> buổi")
     return "\n".join(parts)
 
 
@@ -170,18 +172,26 @@ def build_sync_notification(
     new_events: list[dict],
     changed_events: list[tuple[dict, dict]],  # list of (event, changes_dict)
     total: int,
+    deleted_events: list[dict] | None = None,
     gcal_synced: int = 0,
     gcal_failed: int = 0,
     gcal_deleted: int = 0,
+    failed_classes: set[str] | None = None,
 ) -> str:
+    deleted_events = deleted_events or []
     new_count     = len(new_events)
     changed_count = len(changed_events)
+    deleted_count = len(deleted_events)
 
-    if new_count == 0 and changed_count == 0:
-        parts = [
-            "✅ <b>Lịch học như cũ</b>",
-            f"Tổng hiện có: <b>{total}</b> buổi.",
-        ]
+    if new_count == 0 and changed_count == 0 and deleted_count == 0:
+        parts = (
+            [f"Dữ liệu vừa nhận được từ các lớp khả dụng: <b>{total}</b> buổi."]
+            if failed_classes
+            else [
+                "✅ <b>Lịch học như cũ</b>",
+                f"Tổng hiện có: <b>{total}</b> buổi.",
+            ]
+        )
     else:
         # Kiểm tra có thay đổi ngày không
         has_reschedule = any(
@@ -197,19 +207,36 @@ def build_sync_notification(
             parts.append(f"🆕 Mới: <b>{new_count}</b> buổi")
         if changed_count:
             parts.append(f"✏️ Thay đổi: <b>{changed_count}</b> buổi")
+        if deleted_count:
+            parts.append(f"🗑 Đã hủy/xóa: <b>{deleted_count}</b> buổi")
 
         # Chi tiết tối đa 10 thay đổi
         preview_new      = new_events[:5]
         preview_changed  = changed_events[:5]
-        if preview_new or preview_changed:
+        preview_deleted  = deleted_events[:5]
+        if preview_new or preview_changed or preview_deleted:
             parts.append("\n<b>Chi tiết:</b>")
             for event in preview_new:
                 parts.append(f"\n🆕 {format_event(event)}")
             for event, ch in preview_changed:
                 parts.append(f"\n{build_changed_event_message(event, ch)}")
-            remaining = new_count + changed_count - len(preview_new) - len(preview_changed)
+            for event in preview_deleted:
+                parts.append(f"\n🗑 <b>Lịch đã bị hủy/xóa:</b>\n{format_event(event)}")
+            remaining = (
+                new_count + changed_count + deleted_count
+                - len(preview_new) - len(preview_changed) - len(preview_deleted)
+            )
             if remaining > 0:
                 parts.append(f"\n... và <b>{remaining}</b> thay đổi khác.")
+
+    if failed_classes:
+        warning = (
+            "⚠️ <b>Đồng bộ chưa hoàn tất</b>\n"
+            "API chưa trả dữ liệu cho: <code>"
+            + ", ".join(escape(class_id) for class_id in sorted(failed_classes))
+            + "</code>. Không kết luận lịch như cũ."
+        )
+        parts.insert(0, warning)
 
     if gcal_synced or gcal_failed:
         parts.append(
