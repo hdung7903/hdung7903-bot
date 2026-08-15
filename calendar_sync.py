@@ -6,7 +6,8 @@ import os
 from config import (
     GOOGLE_CALENDAR_ENABLED, GOOGLE_CALENDAR_ID, GOOGLE_CALENDAR_SCOPES,
     GOOGLE_CREDENTIALS_FILE, GOOGLE_TOKEN_FILE, GOOGLE_CREDENTIALS_JSON,
-    GOOGLE_TOKEN_JSON, GOOGLE_ALLOW_LOCAL_OAUTH, TIMEZONE,
+    GOOGLE_TOKEN_JSON, GOOGLE_ALLOW_LOCAL_OAUTH, GOOGLE_AUTH_MODE,
+    GOOGLE_SERVICE_ACCOUNT_FILE, GOOGLE_SERVICE_ACCOUNT_JSON, TIMEZONE,
 )
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,28 @@ _GCAL_SERVICE = None
 _GCAL_UNAVAILABLE_REASON = None
 _GCAL_CALENDAR_VALIDATED = False
 _GCAL_AUTH_ERROR = False          # True khi lỗi invalid_grant → cần token mới
+
+
+def _is_auth_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return any(marker in text for marker in (
+        "invalid_grant", "token_expired", "unauthorized", "invalid_client",
+        "invalid credentials", "login required",
+    ))
+
+
+def _mark_gcal_auth_error(error: Exception, action: str) -> bool:
+    """Đánh dấu auth lỗi một lần để dừng batch, tránh log theo từng event."""
+    global _GCAL_AUTH_ERROR, _GCAL_UNAVAILABLE_REASON, _GCAL_SERVICE, _GCAL_CALENDAR_VALIDATED
+    if not _is_auth_error(error):
+        return False
+    if not _GCAL_AUTH_ERROR:
+        logger.error("Google Calendar authentication failed while %s: %s", action, error)
+    _GCAL_AUTH_ERROR = True
+    _GCAL_UNAVAILABLE_REASON = "Google OAuth token has expired or been revoked"
+    _GCAL_SERVICE = None
+    _GCAL_CALENDAR_VALIDATED = False
+    return True
 
 
 def _write_secret_json_if_needed(path: str, value: str, label: str) -> bool:
@@ -56,6 +79,12 @@ def _write_secret_json_if_needed(path: str, value: str, label: str) -> bool:
 
 
 def _materialize_google_secrets() -> bool:
+    if GOOGLE_AUTH_MODE == "service_account":
+        return _write_secret_json_if_needed(
+            GOOGLE_SERVICE_ACCOUNT_FILE,
+            GOOGLE_SERVICE_ACCOUNT_JSON,
+            "service account credentials",
+        )
     credentials_ok = _write_secret_json_if_needed(
         GOOGLE_CREDENTIALS_FILE,
         GOOGLE_CREDENTIALS_JSON,
@@ -83,6 +112,30 @@ def _get_calendar_service():
 
     if not _materialize_google_secrets():
         return None
+
+    if GOOGLE_AUTH_MODE == "service_account":
+        if not os.path.exists(GOOGLE_SERVICE_ACCOUNT_FILE):
+            _GCAL_UNAVAILABLE_REASON = (
+                f"service account file not found: {GOOGLE_SERVICE_ACCOUNT_FILE}"
+            )
+            logger.warning("Google Calendar disabled: %s", _GCAL_UNAVAILABLE_REASON)
+            return None
+        try:
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
+
+            creds = service_account.Credentials.from_service_account_file(
+                GOOGLE_SERVICE_ACCOUNT_FILE,
+                scopes=GOOGLE_CALENDAR_SCOPES,
+            )
+            _GCAL_SERVICE = build("calendar", "v3", credentials=creds)
+            _GCAL_AUTH_ERROR = False
+            logger.info("Google Calendar authenticated with service account.")
+            return _GCAL_SERVICE
+        except Exception as e:
+            _GCAL_UNAVAILABLE_REASON = str(e)
+            logger.error("Google Calendar service account unavailable: %s", e)
+            return None
 
     if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
         _GCAL_UNAVAILABLE_REASON = f"credentials file not found: {GOOGLE_CREDENTIALS_FILE}"
@@ -138,13 +191,8 @@ def _get_calendar_service():
         return None
     except Exception as e:
         _GCAL_UNAVAILABLE_REASON = str(e)
-        err_str = str(e).lower()
         # invalid_grant = refresh token bị thu hồi/hết hạn → cần tạo token mới thủ công
-        if any(k in err_str for k in ("invalid_grant", "token_expired", "unauthorized",
-                                      "invalid_client", "bad request")):
-            _GCAL_AUTH_ERROR = True
-            logger.warning("Google Calendar: refresh token hết hạn hoặc bị thu hồi: %s", e)
-        else:
+        if not _mark_gcal_auth_error(e, "refreshing OAuth token"):
             _GCAL_AUTH_ERROR = False
             logger.error("Google Calendar disabled: failed to get service: %s", e)
         return None
@@ -159,6 +207,8 @@ def _ensure_calendar_available(service) -> bool:
         _GCAL_CALENDAR_VALIDATED = True
         return True
     except Exception as e:
+        if _mark_gcal_auth_error(e, "validating calendar access"):
+            return False
         _GCAL_UNAVAILABLE_REASON = (
             f"calendar id not found or not accessible: {GOOGLE_CALENDAR_ID}. "
             "Use GOOGLE_CALENDAR_ID=primary for your main calendar, or use the real "
@@ -183,14 +233,15 @@ def get_gcal_user_alert() -> str:
         "Token xác thực Google đã hết hạn hoặc bị thu hồi.\n"
         "Lịch học <b>vẫn đồng bộ bình thường</b> trên bot, "
         "chỉ Google Calendar không được cập nhật.\n\n"
-        "<b>Cách fix (5 phút):</b>\n"
+        "<b>Cách khôi phục OAuth (một lần):</b>\n"
         "1. Mở PowerShell trong thư mục bot\n"
         "2. Chạy: <code>python refresh_gcal_token.py</code>\n"
         "3. Đăng nhập Google trên trình duyệt → Allow\n"
         "4. Copy JSON token mới → cập nhật biến "
         "<code>GOOGLE_TOKEN_JSON</code> trên Coolify\n"
         "5. Redeploy → gõ <code>/gcal_status</code> kiểm tra\n\n"
-        "<i>Bot sẽ không báo lại lỗi này trong 24h tới.</i>"
+        "<i>Để không phải gia hạn mỗi 7 ngày: chuyển OAuth app sang Publishing "
+        "status In production, hoặc dùng Service Account. Bot sẽ không báo lại lỗi này trong 24h tới.</i>"
     )
 
 
@@ -207,6 +258,7 @@ def get_gcal_status(check_service: bool = False) -> dict:
     materialized = _materialize_google_secrets()
     status = {
         "enabled": GOOGLE_CALENDAR_ENABLED,
+        "auth_mode": GOOGLE_AUTH_MODE,
         "calendar_id": GOOGLE_CALENDAR_ID,
         "credentials_file": GOOGLE_CREDENTIALS_FILE,
         "credentials_exists": os.path.exists(GOOGLE_CREDENTIALS_FILE),
@@ -223,6 +275,11 @@ def get_gcal_status(check_service: bool = False) -> dict:
     if not materialized:
         status["reason"] = _GCAL_UNAVAILABLE_REASON or "failed to materialize Google secrets"
         return status
+    if GOOGLE_AUTH_MODE == "service_account":
+        status["credentials_file"] = GOOGLE_SERVICE_ACCOUNT_FILE
+        status["credentials_exists"] = os.path.exists(GOOGLE_SERVICE_ACCOUNT_FILE)
+        status["token_file"] = "not used (service account)"
+        status["token_exists"] = True
     if not status["credentials_exists"]:
         status["reason"] = f"missing credentials file: {GOOGLE_CREDENTIALS_FILE}"
         return status
@@ -315,7 +372,8 @@ def _find_existing_gcal_event(service, event: dict) -> str | None:
             if items:
                 return items[0]["id"]
         except Exception as e:
-            logger.error("Error searching gcal event by bot id %s: %s", bot_event_id, e)
+            if not _mark_gcal_auth_error(e, "searching Google Calendar events"):
+                logger.error("Error searching gcal event by bot id %s: %s", bot_event_id, e)
             return None
     return None
 
@@ -335,6 +393,8 @@ def sync_event_to_gcal(event: dict, service=None) -> bool:
         return False
 
     existing_id = _find_existing_gcal_event(service, event)
+    if _GCAL_AUTH_ERROR:
+        return False
     try:
         if existing_id:
             service.events().update(
@@ -351,7 +411,8 @@ def sync_event_to_gcal(event: dict, service=None) -> bool:
             logger.info("Created GCal event: %s", event["id"])
         return True
     except Exception as e:
-        logger.error("Failed to sync event %s to GCal: %s", event["id"], e)
+        if not _mark_gcal_auth_error(e, "writing Google Calendar events"):
+            logger.error("Failed to sync event %s to GCal: %s", event["id"], e)
         return False
 
 
@@ -392,6 +453,8 @@ def _delete_stale_gcal_events(
                     fields="items(id,extendedProperties),nextPageToken",
                 ).execute()
             except Exception as e:
+                if _mark_gcal_auth_error(e, "listing stale Google Calendar events"):
+                    return deleted, failed + 1
                 logger.error("Failed to list GCal events for cleanup class %s: %s", class_id, e)
                 failed += 1
                 break
@@ -414,6 +477,8 @@ def _delete_stale_gcal_events(
                     reason = "duplicate" if is_duplicate else "stale"
                     logger.info("Deleted %s GCal event %s for class %s", reason, gcal_event["id"], class_id)
                 except Exception as e:
+                    if _mark_gcal_auth_error(e, "deleting stale Google Calendar events"):
+                        return deleted, failed + 1
                     logger.error("Failed to delete GCal event %s: %s", gcal_event.get("id"), e)
                     failed += 1
 
@@ -435,7 +500,13 @@ def sync_all_events(
     if not _ensure_calendar_available(service):
         return 0, len(events), 0
     success, fail = 0, 0
-    for event in events:
+    for index, event in enumerate(events):
+        if _GCAL_AUTH_ERROR:
+            logger.warning(
+                "Google Calendar sync aborted after authentication failure; skipped %d event(s).",
+                len(events) - index,
+            )
+            break
         if not event.get("date"):
             logger.info("Skipped GCal event without parsed date: %s (%s)", event["id"], event.get("time_raw", ""))
             continue
@@ -443,6 +514,9 @@ def sync_all_events(
             success += 1
         else:
             fail += 1
+            if _GCAL_AUTH_ERROR:
+                logger.warning("Google Calendar sync aborted after authentication failure.")
+                break
 
     if fail:
         logger.warning("Skipped GCal stale-event cleanup because %d sync operation(s) failed.", fail)

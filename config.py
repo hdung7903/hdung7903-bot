@@ -64,6 +64,11 @@ GOOGLE_CREDENTIALS_FILE    = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.j
 GOOGLE_TOKEN_FILE          = os.getenv("GOOGLE_TOKEN_FILE", "token.json")
 GOOGLE_CREDENTIALS_JSON    = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
 GOOGLE_TOKEN_JSON          = os.getenv("GOOGLE_TOKEN_JSON", "")
+GOOGLE_AUTH_MODE           = os.getenv("GOOGLE_AUTH_MODE", "oauth").strip().lower()
+GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_FILE", "/app/data/google_service_account.json"
+)
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_CALENDAR_ID         = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 GOOGLE_CALENDAR_SCOPES     = ["https://www.googleapis.com/auth/calendar"]
 GOOGLE_ALLOW_LOCAL_OAUTH   = os.getenv("GOOGLE_ALLOW_LOCAL_OAUTH", "false").lower() == "true"

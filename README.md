@@ -193,6 +193,24 @@ telegram/
 
 ## 🔧 Biến môi trường
 
+### Google Calendar bền vững với Service Account
+
+OAuth app ở trạng thái `Testing` có refresh token Calendar hết hạn sau 7 ngày.
+Để bot không cần gia hạn token thủ công, dùng Service Account:
+
+1. Google Cloud Console → **IAM & Admin** → **Service Accounts** → tạo account.
+2. Tab **Keys** → **Add key** → tạo key JSON; copy toàn bộ nội dung vào Coolify secret `GOOGLE_SERVICE_ACCOUNT_JSON`.
+3. Trong Google Calendar, mở **Settings and sharing** của calendar cần đồng bộ, share cho email Service Account với quyền **Make changes to events**.
+4. Lấy Calendar ID ở phần **Integrate calendar**, không dùng `primary`; sau đó đặt:
+
+```env
+GOOGLE_AUTH_MODE=service_account
+GOOGLE_CALENDAR_ID=<calendar-id-da-share>
+GOOGLE_SERVICE_ACCOUNT_JSON={...}
+```
+
+Service Account không dùng `GOOGLE_TOKEN_JSON`. Với OAuth cá nhân, chuyển OAuth consent screen từ `Testing` sang `In production` để tránh refresh token hết hạn sau 7 ngày.
+
 | Biến | Mặc định | Mô tả |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | *bắt buộc* | Token từ @BotFather |
@@ -206,4 +224,6 @@ telegram/
 | `WC_LIVE_CHECK_MINUTES` | `60` | Chu kỳ kiểm tra kết quả live; `0` để tắt |
 | `GOOGLE_CALENDAR_ENABLED` | `false` | Bật Google Calendar |
 | `GOOGLE_CALENDAR_ID` | `primary` | ID calendar đích |
+| `GOOGLE_AUTH_MODE` | `oauth` | `oauth` hoặc `service_account` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | trống | Key JSON Service Account cho Coolify |
 | `LOG_LEVEL` | `INFO` | Mức log |
