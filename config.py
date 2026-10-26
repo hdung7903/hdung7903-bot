@@ -88,6 +88,7 @@ TIMEZONE = os.getenv("TIMEZONE", "Asia/Ho_Chi_Minh")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+MAX_SYNC_LOG_ENTRIES = int(os.getenv("MAX_SYNC_LOG_ENTRIES", "5000"))
 
 # ── World Cup 2026 ───────────────────────────────────────────────────────────
 WC_ENABLED          = os.getenv("WC_ENABLED", "true").lower() == "true"

@@ -6,7 +6,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from config import DATABASE_PATH
+from config import DATABASE_PATH, MAX_SYNC_LOG_ENTRIES
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +334,14 @@ def log_sync(class_id: str, events_found: int, events_new: int,
                (class_id, events_found, events_new, events_changed, status)
                VALUES (?,?,?,?,?)""",
             (class_id, events_found, events_new, events_changed, status),
+        )
+        # Sync chạy nhiều lần/ngày; giữ lịch sử hữu ích nhưng không để DB tăng vô hạn.
+        conn.execute(
+            """DELETE FROM sync_log
+               WHERE id NOT IN (
+                   SELECT id FROM sync_log ORDER BY id DESC LIMIT ?
+               )""",
+            (MAX_SYNC_LOG_ENTRIES,),
         )
 
 

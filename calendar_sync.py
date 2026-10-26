@@ -402,13 +402,13 @@ def sync_event_to_gcal(event: dict, service=None) -> bool:
                 eventId=existing_id,
                 body=gcal_event,
             ).execute()
-            logger.info("Updated GCal event: %s", event["id"])
+            logger.debug("Updated GCal event: %s", event["id"])
         else:
             service.events().insert(
                 calendarId=GOOGLE_CALENDAR_ID,
                 body=gcal_event,
             ).execute()
-            logger.info("Created GCal event: %s", event["id"])
+            logger.debug("Created GCal event: %s", event["id"])
         return True
     except Exception as e:
         if not _mark_gcal_auth_error(e, "writing Google Calendar events"):
@@ -526,5 +526,11 @@ def sync_all_events(
         service,
         events,
         cleanup_class_ids=cleanup_class_ids,
+    )
+    logger.info(
+        "Google Calendar sync complete: synced=%d, failed=%d, deleted=%d",
+        success,
+        cleanup_failed,
+        deleted,
     )
     return success, cleanup_failed, deleted

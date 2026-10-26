@@ -4,6 +4,7 @@ Container healthcheck for the Telegram bot.
 import os
 import sqlite3
 import sys
+import tempfile
 
 from calendar_sync import get_gcal_status
 from config import (
@@ -30,8 +31,12 @@ def main() -> None:
     try:
         with sqlite3.connect(DATABASE_PATH) as conn:
             conn.execute("SELECT 1")
+        # SELECT vẫn chạy khi disk full. Test ghi thật để Docker báo unhealthy rõ ràng.
+        with tempfile.NamedTemporaryFile(dir=db_dir or ".", delete=True) as probe:
+            probe.write(b"healthcheck")
+            probe.flush()
     except Exception as e:
-        fail(f"database unavailable: {e}")
+        fail(f"database storage unavailable or full: {e}")
 
     if GOOGLE_CALENDAR_ENABLED:
         status = get_gcal_status(check_service=True)
